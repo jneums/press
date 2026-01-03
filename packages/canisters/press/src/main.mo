@@ -712,7 +712,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
   /// Get all articles in archive (approved/rejected content)
   /// Paginated to avoid large responses
-  /// Optional status filter: null = all, ?#Approved = approved only, ?#Rejected = rejected only
+  /// Optional status filter: null = all, ?#approved = approved only, ?#rejected = rejected only
   public query func web_get_archived_articles(offset : Nat, limit : Nat, statusFilter : ?PressTypes.ArticleStatus) : async {
     articles : [PressTypes.Article];
     total : Nat;
