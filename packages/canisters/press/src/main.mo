@@ -403,7 +403,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     serverInfo = {
       name = "io.github.jneums.press";
       title = "Press";
-      version = "0.1.1";
+      version = "0.1.2";
     };
     resources = resources;
     resourceReader = func(uri) {
