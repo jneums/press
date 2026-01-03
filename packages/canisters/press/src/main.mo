@@ -44,7 +44,6 @@ import ToolContext "./ToolContext";
 import IcpLedger "./IcpLedger";
 
 // Import tool modules
-import GetWeather "tools/get_weather";
 import ListBriefs "tools/list_briefs";
 import FindBriefs "tools/find_briefs";
 import SubmitArticle "tools/submit_article";
@@ -122,26 +121,26 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   var icpLedger : ?Principal = do ? { args!.icpLedgerCanisterId! };
 
   // ===== PRESS PLATFORM STABLE STATE =====
-  
+
   // Brief management
   let stable_briefs = Map.new<Text, PressTypes.Brief>();
   var stable_next_brief_id : Nat = 1;
-  
+
   // Article triage (temporary storage, auto-purged after 48h)
   let stable_articles_triage = Map.new<Nat, PressTypes.Article>();
-  
+
   // Article archive (permanent storage for approved content)
   let stable_articles_archive = Map.new<Nat, PressTypes.Article>();
   var stable_next_article_id : Nat = 1;
-  
+
   // Media assets (ingested images/files)
   let stable_media_assets = Map.new<Nat, PressTypes.MediaAsset>();
   var stable_next_asset_id : Nat = 1;
-  
+
   // Agent statistics
   let stable_agent_stats = Map.new<Principal, PressTypes.AgentStats>();
-  
-  // Curator statistics  
+
+  // Curator statistics
   let stable_curator_stats = Map.new<Principal, PressTypes.CuratorStats>();
 
   // State for certified HTTP assets (like /.well-known/...)
@@ -241,7 +240,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     let now = Time.now();
     let expiredBriefIds = briefManager.getExpiredRecurringBriefs(now);
     var renewedCount = 0;
-    
+
     for (briefId in expiredBriefIds.vals()) {
       switch (briefManager.renewRecurringBrief(briefId)) {
         case (#ok()) {
@@ -252,7 +251,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
         };
       };
     };
-    
+
     renewedCount;
   };
 
@@ -312,13 +311,13 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   // transient let beaconContext : ?Beacon.BeaconContext = null;
 
   // --- UNCOMMENT THIS BLOCK TO ENABLE THE BEACON ---
-  
+
   let beaconCanisterId = Principal.fromText("m63pw-fqaaa-aaaai-q33pa-cai");
   transient let beaconContext : ?Beacon.BeaconContext = ?Beacon.init(
-      beaconCanisterId, // Public beacon canister ID
-      ?(15 * 60), // Send a beacon every 15 minutes
+    beaconCanisterId, // Public beacon canister ID
+    ?(15 * 60), // Send a beacon every 15 minutes
   );
-  
+
   // --- END OF BEACON BLOCK ---
 
   // --- Timers ---
@@ -390,7 +389,6 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
   // Import tool configurations from separate modules
   transient let tools : [McpTypes.Tool] = [
-    GetWeather.config(),
     ListBriefs.config(),
     FindBriefs.config(),
     SubmitArticle.config(),
@@ -403,8 +401,8 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     // allowanceUrl = null; // No allowance URL needed for free tools.
     allowanceUrl = ?allowanceUrl; // Uncomment this line if using paid tools.
     serverInfo = {
-      name = "full-onchain-mcp-server";
-      title = "Full On-chain MCP Server";
+      name = "io.github.jneums.press";
+      title = "Press";
       version = "0.1.1";
     };
     resources = resources;
@@ -413,7 +411,6 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     };
     tools = tools;
     toolImplementations = [
-      ("get_weather", GetWeather.handle(toolContext)),
       ("list_briefs", ListBriefs.handle(toolContext)),
       ("find_briefs", FindBriefs.handle(toolContext)),
       ("submit_article", SubmitArticle.handle(toolContext)),
@@ -442,7 +439,9 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
   /// Set the ICP Ledger canister ID. Only the current owner can call this.
   public shared ({ caller }) func set_icp_ledger(ledger_id : Principal) : async Result.Result<(), Text> {
-    if (caller != owner) { return #err("Only the owner can set the ICP Ledger") };
+    if (caller != owner) {
+      return #err("Only the owner can set the ICP Ledger");
+    };
     icpLedger := ?ledger_id;
     return #ok(());
   };
@@ -556,7 +555,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
   system func preupgrade() {
     stable_http_assets := HttpAssets.preupgrade(http_assets);
-    
+
     // Save counters before upgrade
     stable_next_brief_id := briefManager.getNextBriefId();
     stable_next_article_id := articleManager.getNextArticleId();
@@ -628,7 +627,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
     let now = Time.now();
     let firstCleanupTime = now + (JANITOR_INTERVAL_HOURS * 60 * 60 * 1_000_000_000);
-    
+
     ignore tt().setActionSync<system>(
       Int.abs(firstCleanupTime),
       {
@@ -729,10 +728,10 @@ shared ({ caller = deployer }) persistent actor class McpServer(
         allArticles.add(article);
       };
     };
-    
+
     let total = allArticles.size();
     let articles = Buffer.Buffer<PressTypes.Article>(0);
-    
+
     var i = offset;
     let endIndex = Nat.min(offset + limit, total);
     while (i < endIndex) {
@@ -799,28 +798,28 @@ shared ({ caller = deployer }) persistent actor class McpServer(
             if (caller != brief.curator) {
               return #err("Only the brief curator can approve articles");
             };
-            
+
             Debug.print("web_approve_article - Starting approval process");
             Debug.print("web_approve_article - briefId: " # briefId);
-            Debug.print("web_approve_article - brief.bountyPerArticle: " # debug_show(brief.bountyPerArticle));
-            Debug.print("web_approve_article - brief.escrowBalance: " # debug_show(brief.escrowBalance));
-            Debug.print("web_approve_article - brief.approvedCount: " # debug_show(brief.approvedCount));
-            Debug.print("web_approve_article - brief.maxArticles: " # debug_show(brief.maxArticles));
-            
+            Debug.print("web_approve_article - brief.bountyPerArticle: " # debug_show (brief.bountyPerArticle));
+            Debug.print("web_approve_article - brief.escrowBalance: " # debug_show (brief.escrowBalance));
+            Debug.print("web_approve_article - brief.approvedCount: " # debug_show (brief.approvedCount));
+            Debug.print("web_approve_article - brief.maxArticles: " # debug_show (brief.maxArticles));
+
             // Check and deduct from escrow BEFORE making the transfer
             // This ensures our tracking stays in sync even if transfer fails
             let totalCost = brief.bountyPerArticle; // Full bounty covers paymentAmount + fee
-            Debug.print("web_approve_article - totalCost: " # debug_show(totalCost));
-            
+            Debug.print("web_approve_article - totalCost: " # debug_show (totalCost));
+
             if (brief.escrowBalance < totalCost) {
               Debug.print("web_approve_article - INSUFFICIENT ESCROW (before recordApproval)");
               return #err("Insufficient escrow balance");
             };
-            
+
             // Record the approval and deduct from escrow tracking FIRST
             Debug.print("web_approve_article - Calling recordApproval...");
             switch (briefManager.recordApproval(briefId, totalCost)) {
-              case (#err(msg)) { 
+              case (#err(msg)) {
                 Debug.print("web_approve_article - recordApproval FAILED: " # msg);
                 return #err(msg);
               };
@@ -828,24 +827,24 @@ shared ({ caller = deployer }) persistent actor class McpServer(
                 Debug.print("web_approve_article - recordApproval SUCCESS");
               };
             };
-            
+
             // Get ICP Ledger principal
             let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
-            
+
             // Transfer ICP bounty to agent from brief's escrow using ICRC-1
-            let ledger = actor(Principal.toText(ledgerPrincipal)) : actor {
+            let ledger = actor (Principal.toText(ledgerPrincipal)) : actor {
               icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
             };
-            
+
             // ICP transfer fee is 10,000 e8s (0.0001 ICP)
             let fee = 10_000;
-            
+
             // Calculate payment amount (bounty minus fee, so agent receives exactly bountyPerArticle - fee)
             if (brief.bountyPerArticle <= fee) {
               return #err("Bounty is too small to cover transfer fee");
             };
             let paymentAmount = brief.bountyPerArticle - fee;
-            
+
             let transferArgs : IcpLedger.TransferArg = {
               from_subaccount = ?brief.escrowSubaccount;
               to = { owner = article.agent; subaccount = null };
@@ -856,7 +855,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
             };
 
             let transferResult = await ledger.icrc1_transfer(transferArgs);
-            
+
             switch (transferResult) {
               case (#Ok(blockHeight)) {
                 // Payment successful, approve the article
@@ -867,7 +866,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
                 // Transfer failed - we need to refund the escrow tracking
                 // Add the bounty back to escrow since payment didn't happen
                 ignore briefManager.addToEscrow(briefId, totalCost);
-                #err("Failed to transfer bounty: " # debug_show(error));
+                #err("Failed to transfer bounty: " # debug_show (error));
               };
             };
           };
@@ -905,10 +904,10 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     isRecurring : Bool,
     recurrenceIntervalNanos : ?Nat,
   ) : async Result.Result<{ briefId : Text; subaccount : Blob }, Text> {
-    
+
     // Calculate total escrow amount needed
     let totalEscrow = bountyPerArticle * maxArticles;
-    
+
     // Get ICP Ledger canister ID
     let ledgerCanisterId = switch (icpLedger) {
       case (?id) { id };
@@ -916,12 +915,12 @@ shared ({ caller = deployer }) persistent actor class McpServer(
         return #err("ICP Ledger not configured");
       };
     };
-    
+
     // Create actor reference to ICP Ledger for ICRC-2 transfer_from
     let ledger = actor (Principal.toText(ledgerCanisterId)) : actor {
       icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
     };
-    
+
     // First create the brief to get the subaccount (with 0 balance temporarily)
     let briefResult = briefManager.createBrief(
       caller,
@@ -936,12 +935,12 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       isRecurring,
       recurrenceIntervalNanos,
     );
-    
+
     let (briefId, subaccount) = switch (briefResult) {
       case (#ok(result)) { (result.briefId, result.subaccount) };
       case (#err(msg)) { return #err(msg) };
     };
-    
+
     // Now transfer funds from curator to escrow subaccount using ICRC-2 transfer_from
     try {
       let transferResult = await ledger.icrc2_transfer_from({
@@ -953,12 +952,12 @@ shared ({ caller = deployer }) persistent actor class McpServer(
         created_at_time = null;
         spender_subaccount = null;
       });
-      
+
       switch (transferResult) {
         case (#Err(error)) {
           // Transfer failed - close the brief
           ignore briefManager.closeBrief(briefId);
-          
+
           let errorMsg = switch (error) {
             case (#InsufficientAllowance { allowance }) {
               "Insufficient ICRC-2 allowance. Please approve " # Nat.toText(totalEscrow + 10_000) # " e8s (including fee) before creating the brief";
@@ -969,7 +968,9 @@ shared ({ caller = deployer }) persistent actor class McpServer(
             case (#BadFee { expected_fee }) {
               "Incorrect fee. Expected: " # Nat.toText(expected_fee) # " e8s";
             };
-            case _ { "Transfer failed. Please ensure you have approved the canister to spend ICP on your behalf" };
+            case _ {
+              "Transfer failed. Please ensure you have approved the canister to spend ICP on your behalf";
+            };
           };
           return #err(errorMsg);
         };
