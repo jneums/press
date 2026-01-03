@@ -53,5 +53,5 @@ submission:
     gallery_images:
       - >-
         https://github.com/jneums/press/releases/download/v1.0.0-assets/banner-press.webp
-  git_commit: 99b0bd6b11aeefd5a7ff3bff685e29fdc9813c5c
+  git_commit: 1f7e083f44a9121b7f8ec23a521cc7c2c72ece82
   wasm_path: ./out/out_Linux_x86_64.wasm
