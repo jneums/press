@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022"],
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["vitest/globals", "node"],
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": "."
+  },
+  "include": ["test/**/*", "packages/canisters/press/test/tools.test.ts", "packages/canisters/press/test/prometheus.test.ts", "packages/canisters/press/test/mcp_registry_e2e.pic.test.ts"],
+  "exclude": ["node_modules", "dist", ".dfx"]
+}

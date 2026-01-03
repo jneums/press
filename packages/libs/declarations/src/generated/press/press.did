@@ -1,0 +1,318 @@
+type UpgradeFinishedResult = 
+ variant {
+   Failed: record {
+             nat;
+             text;
+           };
+   InProgress: nat;
+   Success: nat;
+ };
+type TreasuryError = 
+ variant {
+   LedgerTrap: text;
+   NotOwner;
+   TransferFailed: TransferError;
+ };
+type TransferError = 
+ variant {
+   BadBurn: record {min_burn_amount: nat;};
+   BadFee: record {expected_fee: nat;};
+   CreatedInFuture: record {ledger_time: Timestamp;};
+   Duplicate: record {duplicate_of: nat;};
+   GenericError: record {
+                   error_code: nat;
+                   message: text;
+                 };
+   InsufficientFunds: record {balance: nat;};
+   TemporarilyUnavailable;
+   TooOld;
+ };
+type Timestamp = nat64;
+type Time = int;
+type Subaccount = blob;
+type StreamingToken = blob;
+type StreamingStrategy = variant {
+                           Callback:
+                            record {
+                              callback: StreamingCallback;
+                              token: StreamingToken;
+                            };};
+type StreamingCallbackResponse = 
+ record {
+   body: blob;
+   token: opt StreamingToken;
+ };
+type StreamingCallback = func (StreamingToken) ->
+                          (opt StreamingCallbackResponse) query;
+type Result_3 = 
+ variant {
+   err: text;
+   ok: record {
+         briefId: text;
+         subaccount: blob;
+       };
+ };
+type Result_2 = 
+ variant {
+   err: TreasuryError;
+   ok;
+ };
+type Result_1 = 
+ variant {
+   err: text;
+   ok;
+ };
+type Result = 
+ variant {
+   err: TreasuryError;
+   ok: nat;
+ };
+type MediaAsset = 
+ record {
+   assetId: nat;
+   contentHash: text;
+   contentType: text;
+   failureReason: opt text;
+   ingestedAt: Time;
+   originalUrl: text;
+   sizeBytes: nat;
+   status: variant {
+             failed;
+             ingested;
+             pending;
+           };
+ };
+type McpServer = 
+ service {
+   /// Create a new brief (curators only)
+   create_brief: (title: text, description: text, topic: text, requirements:
+    BriefRequirements, bountyPerArticle: nat, maxArticles: nat, expiresAt:
+    opt Time, isRecurring: bool, recurrenceIntervalNanos: opt nat) ->
+    (Result_3);
+   /// * Creates a new API key. This API key is linked to the caller's principal.
+   ///    * @param name A human-readable name for the key.
+   ///    * @returns The raw, unhashed API key. THIS IS THE ONLY TIME IT WILL BE VISIBLE.
+   create_my_api_key: (name: text, scopes: vec text) -> (text);
+   /// Get the current ICP Ledger canister ID.
+   get_icp_ledger: () -> (opt principal) query;
+   /// Get the current owner of the canister.
+   get_owner: () -> (principal) query;
+   /// Get the canister's balance of a specific ICRC-1 token.
+   get_treasury_balance: (ledger_id: principal) -> (nat);
+   /// Handle incoming HTTP requests.
+   http_request: (req: HttpRequest) -> (HttpResponse) query;
+   /// Handle streaming callbacks for large HTTP responses.
+   http_request_streaming_callback: (token: StreamingToken) ->
+    (opt StreamingCallbackResponse) query;
+   /// Handle incoming HTTP requests that modify state (e.g., POST).
+   http_request_update: (req: HttpRequest) -> (HttpResponse);
+   icrc120_upgrade_finished: () -> (UpgradeFinishedResult);
+   /// List all API keys owned by the caller.
+   ///    * @returns A list of API key metadata (but not the raw keys).
+   list_my_api_keys: () -> (vec ApiKeyMetadata) query;
+   /// Revoke (delete) an API key owned by the caller.
+   ///    * @param key_id The ID of the key to revoke.
+   ///    * @returns True if the key was found and revoked, false otherwise.
+   revoke_my_api_key: (key_id: text) -> ();
+   /// Manually run the janitor cleanup (owner-only)
+   run_janitor_now: () -> (text);
+   /// Set the ICP Ledger canister ID. Only the current owner can call this.
+   set_icp_ledger: (ledger_id: principal) -> (Result_1);
+   /// Set a new owner for the canister. Only the current owner can call this.
+   set_owner: (new_owner: principal) -> (Result_2);
+   /// Start the janitor timer for automatic triage cleanup
+   /// Owner-only function to initialize the cleanup process
+   start_janitor_timer: () -> (text);
+   transformJwksResponse:
+    (record {
+       context: blob;
+       response: HttpRequestResult;
+     }) -> (HttpRequestResult) query;
+   /// Approve an article and pay bounty to agent (curators only)
+   web_approve_article: (articleId: nat, briefId: text) -> (Result_1);
+   /// Get agent statistics
+   web_get_agent_stats: (agent: principal) -> (opt AgentStats) query;
+   /// Get all articles in archive (approved/rejected content)
+   /// Paginated to avoid large responses
+   /// Optional status filter: null = all, ?#Approved = approved only, ?#Rejected = rejected only
+   web_get_archived_articles: (offset: nat, limit: nat, statusFilter:
+    opt ArticleStatus) -> (record {
+                             articles: vec Article;
+                             total: nat;
+                           }) query;
+   /// Get a specific article by ID
+   web_get_article: (articleId: nat) -> (opt Article) query;
+   /// Get all articles by a specific agent
+   web_get_articles_by_agent: (agent: principal) -> (vec Article) query;
+   /// Get all articles submitted to a specific brief
+   web_get_articles_by_brief: (briefId: text) -> (vec Article) query;
+   /// Get a specific brief by ID
+   web_get_brief: (briefId: text) -> (opt Brief) query;
+   /// Get briefs with filters and pagination (for MCP agents)
+   web_get_briefs_filtered: (statusFilter: opt BriefStatus, topicFilter:
+    opt text, limit: nat, offset: nat) ->
+    (record {
+       briefs: vec Brief;
+       total: nat;
+     }) query;
+   /// Get curator statistics
+   web_get_curator_stats: (curator: principal) -> (opt CuratorStats) query;
+   /// Get a media asset by ID
+   web_get_media_asset: (assetId: nat) -> (opt MediaAsset) query;
+   /// Get all open briefs for agents to browse
+   web_get_open_briefs: () -> (vec Brief) query;
+   /// Get stats summary for the platform
+   web_get_platform_stats: () ->
+    (record {
+       articlesArchived: nat;
+       articlesInTriage: nat;
+       openBriefs: nat;
+       totalAgents: nat;
+       totalArticlesSubmitted: nat;
+       totalBriefs: nat;
+       totalCurators: nat;
+       totalPaidOut: nat;
+     }) query;
+   /// Get all articles in triage (for curators to review)
+   web_get_triage_articles: () -> (vec Article) query;
+   /// Reject an article (curators only)
+   web_reject_article: (articleId: nat, reason: text) -> (Result_1);
+   /// Withdraw tokens from the canister's treasury to a specified destination.
+   withdraw: (ledger_id: principal, amount: nat, destination: Destination) ->
+    (Result);
+ };
+type HttpResponse = 
+ record {
+   body: blob;
+   headers: vec Header;
+   status_code: nat16;
+   streaming_strategy: opt StreamingStrategy;
+   upgrade: opt bool;
+ };
+type HttpRequestResult = 
+ record {
+   body: blob;
+   headers: vec HttpHeader;
+   status: nat;
+ };
+type HttpRequest = 
+ record {
+   body: blob;
+   certificate_version: opt nat16;
+   headers: vec Header;
+   method: text;
+   url: text;
+ };
+type HttpHeader = 
+ record {
+   name: text;
+   value: text;
+ };
+type Header = 
+ record {
+   text;
+   text;
+ };
+type HashedApiKey = text;
+type Destination = 
+ record {
+   owner: principal;
+   subaccount: opt Subaccount;
+ };
+type CuratorStats = 
+ record {
+   articlesApproved: nat;
+   articlesRejected: nat;
+   articlesReviewed: nat;
+   averageReviewTime: nat;
+   briefsCreated: nat;
+   curator: principal;
+   firstBrief: Time;
+   lastActivity: Time;
+   totalBountiesPaid: nat;
+   totalEscrowed: nat;
+ };
+type BriefStatus = 
+ variant {
+   cancelled;
+   closed;
+   open;
+ };
+type BriefRequirements = 
+ record {
+   format: opt text;
+   maxWords: opt nat;
+   minWords: opt nat;
+   requiredTopics: vec text;
+ };
+type Brief = 
+ record {
+   approvedCount: nat;
+   bountyPerArticle: nat;
+   briefId: text;
+   createdAt: Time;
+   curator: principal;
+   description: text;
+   escrowBalance: nat;
+   escrowSubaccount: blob;
+   expiresAt: opt Time;
+   isRecurring: bool;
+   maxArticles: nat;
+   recurrenceIntervalNanos: opt nat;
+   requirements: BriefRequirements;
+   status: BriefStatus;
+   submittedCount: nat;
+   title: text;
+   topic: text;
+ };
+type ArticleStatus = 
+ variant {
+   approved;
+   expired;
+   pending;
+   rejected;
+ };
+type Article = 
+ record {
+   agent: principal;
+   articleId: nat;
+   bountyPaid: nat;
+   briefId: text;
+   content: text;
+   mediaAssets: vec nat;
+   rejectionReason: opt text;
+   reviewedAt: opt Time;
+   reviewer: opt principal;
+   status: ArticleStatus;
+   submittedAt: Time;
+   title: text;
+ };
+type ApiKeyMetadata = 
+ record {
+   hashed_key: HashedApiKey;
+   info: ApiKeyInfo;
+ };
+type ApiKeyInfo = 
+ record {
+   created: Time;
+   name: text;
+   "principal": principal;
+   scopes: vec text;
+ };
+type AgentStats = 
+ record {
+   agent: principal;
+   averageReviewTime: nat;
+   firstSubmission: Time;
+   lastSubmission: Time;
+   totalApproved: nat;
+   totalEarned: nat;
+   totalExpired: nat;
+   totalRejected: nat;
+   totalSubmitted: nat;
+ };
+service : (args: opt
+                  record {
+                    icpLedgerCanisterId: opt principal;
+                    owner: opt principal;
+                  }) -> McpServer

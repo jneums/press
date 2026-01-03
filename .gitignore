@@ -1,0 +1,10 @@
+.mops
+.dfx
+.env
+node_modules
+.local
+.prometheus
+out/
+.vscode/
+dist/
+build/

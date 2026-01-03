@@ -1,0 +1,60 @@
+namespace: io.github.jneums.press
+submission:
+  name: PokedBots Racing
+  description: >-
+    Race your PokedBots NFTs in the wasteland! Compete for ICP prizes in Daily
+    Sprints, Weekly Leagues, and Monthly Cups. Upgrade your bots, climb through
+    divisions (Scavenger → Raider → Elite → SilentKlan), and dominate the
+    leaderboards. Features 14 unique factions with special bonuses, dynamic
+    terrain racing, and a fully balanced stat system where rarity equals
+    performance.
+  publisher: PokedBots
+  category: Gaming
+  deployment_type: global
+  repo_url: https://github.com/jneums/press
+  mcp_path: /mcp
+  why_this_app: >-
+    PokedBots Racing brings competitive NFT racing to the Internet Computer with
+    real ICP prizes, strategic upgrades, and skill-based progression. Race your
+    existing PokedBots collection or purchase new bots on the integrated
+    marketplace. The platform features automatic class promotion, balanced
+    faction bonuses (Ultra-rare bots dominate top 100), and sustainable
+    economics where skilled racers earn 15-50 ICP/month.
+  key_features:
+    - >-
+      Race PokedBots NFTs for real ICP prizes in Daily, Weekly, and Monthly
+      events
+    - >-
+      ELO-based ranking system with four competitive divisions: Scavenger
+      (<1400), Raider (1400-1599), Elite (1600-1799), SilentKlan (1800+)
+    - >-
+      Strategic bot upgrades with progressive ICP costs (1 ICP for first
+      upgrade, increases with each level)
+    - >-
+      14 unique factions with balanced bonuses (UltimateMaster +25, Wild +18-24,
+      Golden +14-18, etc.)
+    - Integrated NFT marketplace for buying/selling upgraded racing bots
+    - >-
+      Dynamic terrain system (ScrapHeaps, WastelandSand, MetalRoads) affecting
+      race outcomes
+    - >-
+      Maintenance system (battery, condition) creating strategic resource
+      management
+  tags:
+    - gaming
+    - nft
+    - racing
+    - icp
+    - competition
+    - blockchain
+    - marketplace
+  visuals:
+    icon_url: >-
+      https://github.com/jneums/press/releases/download/v1.0.2-assets/icon-press.webp
+    banner_url: >-
+      https://github.com/jneums/press/releases/download/v1.0.2-assets/banner-press.webp
+    gallery_images:
+      - >-
+        https://github.com/jneums/press/releases/download/v1.0.2-assets/banner-press.webp
+  git_commit: e881e417d855b6ba71d411951a46560f7603efb9
+  wasm_path: ./out/out_Linux_x86_64.wasm
