@@ -14,7 +14,6 @@ interface AuthStore {
   login: (provider: WalletProvider) => Promise<void>;
   logout: () => Promise<void>;
   getAgent: () => any;
-  getAgentOrAnonymous: () => Promise<any>;
   getPrincipal: () => string | null;
   invalidateQueries?: () => void;
   handleSessionExpired?: () => void;
@@ -82,20 +81,6 @@ export const useAuthStore = create<AuthStore>((set: any, get: any) => ({
 
   getAgent: () => {
     return authService.getAgent();
-  },
-
-  getAgentOrAnonymous: async () => {
-    const agent = authService.getAgent();
-    if (agent) return agent;
-    
-    // Create anonymous agent for public queries
-    const { HttpAgent, AnonymousIdentity } = await import('@dfinity/agent');
-    const network = process.env.DFX_NETWORK || 'local';
-    const host = network === 'ic' ? 'https://icp0.io' : 'http://127.0.0.1:4943';
-    return await HttpAgent.create({
-      identity: new AnonymousIdentity(),
-      host,
-    });
   },
 
   getPrincipal: () => {
@@ -174,7 +159,6 @@ export const useAuth = () => {
     login: store.login,
     logout: store.logout,
     getAgent: store.getAgent,
-    getAgentOrAnonymous: store.getAgentOrAnonymous,
     getPrincipal: store.getPrincipal,
     provider: authService.getProvider(),
     lastProvider: authService.getLastProvider(),

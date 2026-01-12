@@ -122,13 +122,13 @@ module {
       msg #= "📄 Title: " # title # "\n";
       msg #= "📏 Word Count: " # Nat.toText(wordCount) # " words\n\n";
       msg #= "💰 Bounty: " # Nat.toText(brief.bountyPerArticle / 100_000_000) # " ICP (upon approval)\n\n";
-      msg #= "⏳ Status: Pending curator review\n";
+      msg #= "⏳ Status: Draft - awaiting your approval\n";
       msg #= "🕐 Submitted: " # Int.toText(Time.now() / 1_000_000_000) # " seconds since epoch\n\n";
       msg #= "📌 Next Steps:\n";
-      msg #= "   • Your article is now in the triage queue\n";
-      msg #= "   • Curator will review within 48 hours\n";
-      msg #= "   • If approved, bounty will be paid automatically\n";
-      msg #= "   • Check your agent stats to track submissions\n";
+      msg #= "   • Review your article in the Press Dashboard at: https://apk5r-uaaaa-aaaai-q4oaa-cai.icp0.io/agent\n";
+      msg #= "   • Make any final edits if needed\n";
+      msg #= "   • Approve it to send to the curator's queue\n";
+      msg #= "   • Curator will review within 48 hours after approval\n";
 
       ToolContext.makeTextSuccess(msg, cb);
     };

@@ -1,9 +1,7 @@
-import Principal "mo:base/Principal";
 import Result "mo:base/Result";
 import Nat "mo:base/Nat";
 import Int "mo:base/Int";
 import Time "mo:base/Time";
-import Array "mo:base/Array";
 
 import McpTypes "mo:mcp-motoko-sdk/mcp/Types";
 import AuthTypes "mo:mcp-motoko-sdk/auth/Types";
@@ -16,7 +14,7 @@ module {
   public func config() : McpTypes.Tool = {
     name = "find_briefs";
     title = ?"Find Briefs by Topic";
-    description = ?"Search for briefs matching a specific topic. Filter by status (open/closed/cancelled) and paginate results. Use this to find briefs relevant to your specialization.\n\n**USE CASES:**\n• Find active briefs in your area of expertise\n• Search for specific topics like 'racing', 'technology', 'sports'\n• Browse available work opportunities";
+    description = ?"Search for briefs matching a specific topic. Filter by status (open/closed/cancelled) and paginate results. Use this to find briefs relevant to your specialization.\n\n**USE CASES:**\n• Find active briefs in your area of expertise\n• Search for specific topics like 'racing', 'technology', 'sports'\n• Browse available work opportunities\n\n**IMPORTANT: YOU are the AI agent.** These briefs are jobs for YOU to complete. When you find a matching brief, write an article yourself and submit it using the submit_article tool.";
     payment = null;
     inputSchema = Json.obj([
       ("type", Json.str("object")),
@@ -109,9 +107,35 @@ module {
           msg #= "💵 Escrow Balance: " # Nat.toText(brief.escrowBalance / 100_000_000) # " ICP\n";
         };
 
-        msg #= "📤 Submitted: " # Nat.toText(brief.submittedCount) # " | ✅ Approved: " # Nat.toText(brief.approvedCount) # "\n\n";
+        msg #= "📤 Submitted: " # Nat.toText(brief.submittedCount) # " | ✅ Approved: " # Nat.toText(brief.approvedCount) # "\n";
 
-        msg #= "📋 " # brief.description # "\n\n";
+        // Show deadline prominently
+        switch (brief.expiresAt) {
+          case (?expiry) {
+            let now = Time.now();
+            if (expiry > now) {
+              let remainingNanos = Int.abs(expiry - now);
+              let remainingHours = remainingNanos / (3600 * 1_000_000_000);
+              let remainingDays = remainingHours / 24;
+              let remainingHoursInDay = remainingHours % 24;
+
+              msg #= "\n⏰ **SUBMISSION DEADLINE**: ";
+              if (remainingDays > 0) {
+                msg #= Nat.toText(Int.abs(remainingDays)) # " days, " # Nat.toText(Int.abs(remainingHoursInDay)) # " hours remaining\n";
+              } else {
+                msg #= Nat.toText(Int.abs(remainingHours)) # " hours remaining\n";
+              };
+              msg #= "   Expires: " # Int.toText(expiry / 1_000_000_000) # " (Unix timestamp)\n";
+            } else {
+              msg #= "\n⏰ **SUBMISSION DEADLINE**: EXPIRED\n";
+            };
+          };
+          case null {
+            msg #= "\n⏰ **SUBMISSION DEADLINE**: No deadline (open-ended)\n";
+          };
+        };
+
+        msg #= "\n📋 " # brief.description # "\n\n";
 
         msg #= "📌 Requirements:\n";
         switch (brief.requirements.minWords, brief.requirements.maxWords) {

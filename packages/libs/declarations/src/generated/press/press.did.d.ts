@@ -28,24 +28,33 @@ export interface Article {
   'title' : string,
   'content' : string,
   'agent' : Principal,
+  'revisionSubmissions' : Array<RevisionSubmission>,
   'briefId' : string,
+  'revisionHistory' : Array<RevisionRequest>,
   'rejectionReason' : [] | [string],
   'bountyPaid' : bigint,
   'submittedAt' : Time,
   'reviewedAt' : [] | [Time],
   'articleId' : bigint,
+  'selectedForRevision' : boolean,
+  'currentRevision' : bigint,
   'reviewer' : [] | [Principal],
+  'revisionsRequested' : bigint,
   'mediaAssets' : Array<bigint>,
 }
-export type ArticleStatus = { 'expired' : null } |
+export type ArticleStatus = { 'revisionSubmitted' : null } |
+  { 'expired' : null } |
   { 'pending' : null } |
   { 'approved' : null } |
-  { 'rejected' : null };
+  { 'rejected' : null } |
+  { 'draft' : null } |
+  { 'revisionRequested' : null };
 export interface Brief {
   'status' : BriefStatus,
   'title' : string,
   'topic' : string,
   'expiresAt' : [] | [Time],
+  'platformConfig' : PlatformConfig,
   'isRecurring' : boolean,
   'briefId' : string,
   'approvedCount' : bigint,
@@ -69,6 +78,16 @@ export interface BriefRequirements {
 export type BriefStatus = { 'closed' : null } |
   { 'cancelled' : null } |
   { 'open' : null };
+export interface BriefUpdateRequest {
+  'title' : [] | [string],
+  'topic' : [] | [string],
+  'expiresAt' : [] | [[] | [Time]],
+  'platformConfig' : [] | [PlatformConfig],
+  'description' : [] | [string],
+  'bountyPerArticle' : [] | [bigint],
+  'maxArticles' : [] | [bigint],
+  'requirements' : [] | [BriefRequirements],
+}
 export interface CuratorStats {
   'lastActivity' : Time,
   'briefsCreated' : bigint,
@@ -108,11 +127,13 @@ export interface HttpResponse {
   'status_code' : number,
 }
 export interface McpServer {
+  'add_escrow_to_brief' : ActorMethod<[string, bigint], Result_1>,
   'create_brief' : ActorMethod<
     [
       string,
       string,
       string,
+      PlatformConfig,
       BriefRequirements,
       bigint,
       bigint,
@@ -143,7 +164,9 @@ export interface McpServer {
     [{ 'context' : Uint8Array | number[], 'response' : HttpRequestResult }],
     HttpRequestResult
   >,
+  'update_brief' : ActorMethod<[string, BriefUpdateRequest], Result_1>,
   'web_approve_article' : ActorMethod<[bigint, string], Result_1>,
+  'web_approve_draft' : ActorMethod<[bigint], Result_1>,
   'web_get_agent_stats' : ActorMethod<[Principal], [] | [AgentStats]>,
   'web_get_archived_articles' : ActorMethod<
     [bigint, bigint, [] | [ArticleStatus]],
@@ -175,6 +198,9 @@ export interface McpServer {
   >,
   'web_get_triage_articles' : ActorMethod<[], Array<Article>>,
   'web_reject_article' : ActorMethod<[bigint, string], Result_1>,
+  'web_request_revision' : ActorMethod<[bigint, string, string], Result_1>,
+  'web_submit_revision' : ActorMethod<[bigint, string], Result_1>,
+  'web_update_draft' : ActorMethod<[bigint, string, string], Result_1>,
   'withdraw' : ActorMethod<[Principal, bigint, Destination], Result>,
 }
 export interface MediaAsset {
@@ -189,6 +215,27 @@ export interface MediaAsset {
   'sizeBytes' : bigint,
   'ingestedAt' : Time,
 }
+export type Platform = { 'linkedin' : null } |
+  { 'twitter' : null } |
+  { 'other' : null } |
+  { 'blog' : null } |
+  { 'research' : null } |
+  { 'youtube' : null } |
+  { 'newsletter' : null } |
+  { 'medium' : null };
+export interface PlatformConfig {
+  'targetDuration' : [] | [bigint],
+  'subjectLine' : [] | [string],
+  'includeAbstract' : [] | [boolean],
+  'customInstructions' : [] | [string],
+  'tags' : Array<string>,
+  'citationStyle' : [] | [string],
+  'platform' : Platform,
+  'isArticle' : [] | [boolean],
+  'threadCount' : [] | [bigint],
+  'includeHashtags' : [] | [boolean],
+  'includeTimestamps' : [] | [boolean],
+}
 export type Result = { 'ok' : bigint } |
   { 'err' : TreasuryError };
 export type Result_1 = { 'ok' : null } |
@@ -199,6 +246,17 @@ export type Result_3 = {
     'ok' : { 'briefId' : string, 'subaccount' : Uint8Array | number[] }
   } |
   { 'err' : string };
+export interface RevisionRequest {
+  'feedback' : string,
+  'revisionNumber' : bigint,
+  'requestedAt' : Time,
+  'requestedBy' : Principal,
+}
+export interface RevisionSubmission {
+  'content' : string,
+  'submittedAt' : Time,
+  'revisionNumber' : bigint,
+}
 export type StreamingCallback = ActorMethod<
   [StreamingToken],
   [] | [StreamingCallbackResponse]

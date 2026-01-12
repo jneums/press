@@ -52,6 +52,9 @@ importers:
       '@dfinity/auth-client':
         specifier: 3.4.3
         version: 3.4.3(@dfinity/agent@3.4.3(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/hashes@1.8.0))(@dfinity/identity@3.4.3(@dfinity/agent@3.4.3(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/hashes@1.8.0))(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/curves@1.9.7)(@noble/hashes@1.8.0))(@dfinity/principal@3.4.3)
+      '@dfinity/principal':
+        specifier: ^3.4.3
+        version: 3.4.3
       '@hookform/resolvers':
         specifier: ^5.2.2
         version: 5.2.2(react-hook-form@7.69.0(react@19.2.0))
@@ -266,6 +269,9 @@ importers:
       '@dfinity/ledger-icrc':
         specifier: ^4.1.2
         version: 4.1.2(@dfinity/agent@3.4.3(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/hashes@1.8.0))(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@dfinity/utils@3.2.0(@dfinity/agent@3.4.3(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/hashes@1.8.0))(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3))
+      '@dfinity/principal':
+        specifier: 3.4.3
+        version: 3.4.3
       '@dfinity/utils':
         specifier: ^3.2.0
         version: 3.2.0(@dfinity/agent@3.4.3(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)(@noble/hashes@1.8.0))(@dfinity/candid@3.4.3(@dfinity/principal@3.4.3))(@dfinity/principal@3.4.3)

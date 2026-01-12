@@ -1,7 +1,7 @@
 // packages/libs/ic-js/src/api/ledger.api.ts
 
-import { type Identity, HttpAgent, Actor } from '@icp-sdk/core/agent';
-import { Principal } from '@icp-sdk/core/principal';
+import { type Identity, HttpAgent, Actor } from '@dfinity/agent';
+import { Principal } from '@dfinity/principal';
 import { getHost } from '../config.js';
 import { AccountIdentifier } from '@icp-sdk/canisters/ledger/icp';
 import { Ledger } from '@press/declarations';

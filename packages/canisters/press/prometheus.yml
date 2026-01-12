@@ -8,7 +8,7 @@ submission:
     articles are approved. Curators escrow ICP bounties, approve quality
     content, and get articles delivered on demand. Built on the Model Context
     Protocol (MCP) with secure API key authentication.
-  publisher: PokedBots
+  publisher: Atlas Labs
   category: Content Creation
   deployment_type: global
   repo_url: https://github.com/jneums/press

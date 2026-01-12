@@ -12,21 +12,25 @@ import {
   getMediaAsset,
   getPlatformStats,
   createBrief,
+  updateBrief,
+  addEscrowToBrief,
+  approveArticle,
+  rejectArticle,
+  requestRevision,
 } from '@press/ic-js';
 import { useAuth } from './useAuth';
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 
 /**
  * Hook to fetch all open briefs (public - works without authentication)
  */
 export function useOpenBriefs() {
-  const { getAgentOrAnonymous } = useAuth();
+  const { getAgent } = useAuth();
 
   return useQuery({
     queryKey: ['press', 'briefs', 'open'],
     queryFn: async () => {
-      const agent = await getAgentOrAnonymous();
-      return await getOpenBriefs(agent);
+      return await getOpenBriefs(getAgent());
     },
     refetchInterval: 30000, // Refetch every 30 seconds
   });
@@ -36,14 +40,13 @@ export function useOpenBriefs() {
  * Hook to fetch a specific brief by ID (public - works without authentication)
  */
 export function useBrief(briefId: string | undefined) {
-  const { getAgentOrAnonymous } = useAuth();
+  const { getAgent } = useAuth();
 
   return useQuery({
     queryKey: ['press', 'brief', briefId],
     queryFn: async () => {
       if (!briefId) throw new Error('No brief ID');
-      const agent = await getAgentOrAnonymous();
-      return await getBrief(agent, briefId);
+      return await getBrief(getAgent(), briefId);
     },
     enabled: !!briefId,
   });
@@ -197,13 +200,12 @@ export function useMediaAsset(assetId: bigint | undefined) {
  * Hook to fetch platform-wide statistics (public - works without authentication)
  */
 export function usePlatformStats() {
-  const { getAgentOrAnonymous } = useAuth();
+  const { getAgent } = useAuth();
 
   return useQuery({
     queryKey: ['press', 'stats', 'platform'],
     queryFn: async () => {
-      const agent = await getAgentOrAnonymous();
-      return await getPlatformStats(agent);
+      return await getPlatformStats(getAgent());
     },
     refetchInterval: 60000, // Refetch every minute
   });
@@ -221,6 +223,19 @@ export function useCreateBrief() {
       title: string;
       description: string;
       topic: string;
+      platformConfig: {
+        platform: { [key: string]: null };
+        includeHashtags: boolean[];
+        threadCount: bigint[];
+        isArticle: boolean[];
+        tags: string[];
+        includeTimestamps: boolean[];
+        targetDuration: bigint[];
+        subjectLine: string[];
+        citationStyle: string[];
+        includeAbstract: boolean[];
+        customInstructions: string[];
+      };
       requirements: {
         requiredTopics: string[];
         format: string | null;
@@ -241,6 +256,149 @@ export function useCreateBrief() {
       // Invalidate briefs queries to refetch the list
       await queryClient.invalidateQueries({ queryKey: ['press', 'briefs'] });
       await queryClient.invalidateQueries({ queryKey: ['press', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Hook to update an existing brief (curator only)
+ * Fairness constraints are enforced by the backend:
+ * - bountyPerArticle can only INCREASE
+ * - maxArticles can only INCREASE
+ * - expiresAt can only be extended, not shortened
+ */
+export function useUpdateBrief() {
+  const { getAgent } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      briefId: string;
+      title?: string;
+      description?: string;
+      topic?: string;
+      platformConfig?: {
+        platform: { [key: string]: null };
+        includeHashtags: boolean[];
+        threadCount: bigint[];
+        isArticle: boolean[];
+        tags: string[];
+        includeTimestamps: boolean[];
+        targetDuration: bigint[];
+        subjectLine: string[];
+        citationStyle: string[];
+        includeAbstract: boolean[];
+        customInstructions: string[];
+      };
+      requirements?: {
+        requiredTopics: string[];
+        format: string | null;
+        minWords?: bigint;
+        maxWords?: bigint;
+      };
+      bountyPerArticle?: bigint;
+      maxArticles?: bigint;
+      expiresAt?: bigint | null;
+    }) => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      const { briefId, ...updateParams } = params;
+      return await updateBrief(agent, briefId, updateParams);
+    },
+    onSuccess: async (_data, variables) => {
+      // Invalidate specific brief and all briefs queries
+      await queryClient.invalidateQueries({ queryKey: ['press', 'brief', variables.briefId] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'briefs'] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Hook to add additional escrow to a brief
+ */
+export function useAddEscrowToBrief() {
+  const { getAgent } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { briefId: string; amount: bigint }) => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      return await addEscrowToBrief(agent, params.briefId, params.amount);
+    },
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ['press', 'brief', variables.briefId] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'briefs'] });
+    },
+  });
+}
+
+/**
+ * Hook to approve an article and pay the bounty
+ */
+export function useApproveArticle() {
+  const { getAgent } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { articleId: bigint; briefId: string }) => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      return await approveArticle(agent, params.articleId, params.briefId);
+    },
+    onSuccess: async (_data, variables) => {
+      // Invalidate all related queries to ensure UI updates
+      await queryClient.invalidateQueries({ queryKey: ['press', 'article', variables.articleId.toString()] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'articles'] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'brief', variables.briefId] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'briefs'] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Hook to reject an article
+ */
+export function useRejectArticle() {
+  const { getAgent } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { articleId: bigint; reason: string }) => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      return await rejectArticle(agent, params.articleId, params.reason);
+    },
+    onSuccess: async (_data, variables) => {
+      // Invalidate all related queries to ensure UI updates
+      await queryClient.invalidateQueries({ queryKey: ['press', 'article', variables.articleId.toString()] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'articles'] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'stats'] });
+    },
+  });
+}
+
+/**
+ * Hook to request a revision for an article
+ */
+export function useRequestRevision() {
+  const { getAgent } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: { articleId: bigint; briefId: string; feedback: string }) => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      return await requestRevision(agent, params.articleId, params.briefId, params.feedback);
+    },
+    onSuccess: async (_data, variables) => {
+      // Invalidate all related queries to ensure UI updates
+      await queryClient.invalidateQueries({ queryKey: ['press', 'article', variables.articleId.toString()] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'articles'] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'brief', variables.briefId] });
+      await queryClient.invalidateQueries({ queryKey: ['press', 'briefs'] });
     },
   });
 }

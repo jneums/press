@@ -1,4 +1,28 @@
 export const idlFactory = ({ IDL }) => {
+  const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const Platform = IDL.Variant({
+    'linkedin' : IDL.Null,
+    'twitter' : IDL.Null,
+    'other' : IDL.Null,
+    'blog' : IDL.Null,
+    'research' : IDL.Null,
+    'youtube' : IDL.Null,
+    'newsletter' : IDL.Null,
+    'medium' : IDL.Null,
+  });
+  const PlatformConfig = IDL.Record({
+    'targetDuration' : IDL.Opt(IDL.Nat),
+    'subjectLine' : IDL.Opt(IDL.Text),
+    'includeAbstract' : IDL.Opt(IDL.Bool),
+    'customInstructions' : IDL.Opt(IDL.Text),
+    'tags' : IDL.Vec(IDL.Text),
+    'citationStyle' : IDL.Opt(IDL.Text),
+    'platform' : Platform,
+    'isArticle' : IDL.Opt(IDL.Bool),
+    'threadCount' : IDL.Opt(IDL.Nat),
+    'includeHashtags' : IDL.Opt(IDL.Bool),
+    'includeTimestamps' : IDL.Opt(IDL.Bool),
+  });
   const BriefRequirements = IDL.Record({
     'maxWords' : IDL.Opt(IDL.Nat),
     'requiredTopics' : IDL.Vec(IDL.Text),
@@ -60,7 +84,6 @@ export const idlFactory = ({ IDL }) => {
     'info' : ApiKeyInfo,
     'hashed_key' : HashedApiKey,
   });
-  const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
   const Timestamp = IDL.Nat64;
   const TransferError = IDL.Variant({
     'GenericError' : IDL.Record({
@@ -87,6 +110,16 @@ export const idlFactory = ({ IDL }) => {
     'body' : IDL.Vec(IDL.Nat8),
     'headers' : IDL.Vec(HttpHeader),
   });
+  const BriefUpdateRequest = IDL.Record({
+    'title' : IDL.Opt(IDL.Text),
+    'topic' : IDL.Opt(IDL.Text),
+    'expiresAt' : IDL.Opt(IDL.Opt(Time)),
+    'platformConfig' : IDL.Opt(PlatformConfig),
+    'description' : IDL.Opt(IDL.Text),
+    'bountyPerArticle' : IDL.Opt(IDL.Nat),
+    'maxArticles' : IDL.Opt(IDL.Nat),
+    'requirements' : IDL.Opt(BriefRequirements),
+  });
   const AgentStats = IDL.Record({
     'firstSubmission' : Time,
     'agent' : IDL.Principal,
@@ -99,23 +132,42 @@ export const idlFactory = ({ IDL }) => {
     'totalSubmitted' : IDL.Nat,
   });
   const ArticleStatus = IDL.Variant({
+    'revisionSubmitted' : IDL.Null,
     'expired' : IDL.Null,
     'pending' : IDL.Null,
     'approved' : IDL.Null,
     'rejected' : IDL.Null,
+    'draft' : IDL.Null,
+    'revisionRequested' : IDL.Null,
+  });
+  const RevisionSubmission = IDL.Record({
+    'content' : IDL.Text,
+    'submittedAt' : Time,
+    'revisionNumber' : IDL.Nat,
+  });
+  const RevisionRequest = IDL.Record({
+    'feedback' : IDL.Text,
+    'revisionNumber' : IDL.Nat,
+    'requestedAt' : Time,
+    'requestedBy' : IDL.Principal,
   });
   const Article = IDL.Record({
     'status' : ArticleStatus,
     'title' : IDL.Text,
     'content' : IDL.Text,
     'agent' : IDL.Principal,
+    'revisionSubmissions' : IDL.Vec(RevisionSubmission),
     'briefId' : IDL.Text,
+    'revisionHistory' : IDL.Vec(RevisionRequest),
     'rejectionReason' : IDL.Opt(IDL.Text),
     'bountyPaid' : IDL.Nat,
     'submittedAt' : Time,
     'reviewedAt' : IDL.Opt(Time),
     'articleId' : IDL.Nat,
+    'selectedForRevision' : IDL.Bool,
+    'currentRevision' : IDL.Nat,
     'reviewer' : IDL.Opt(IDL.Principal),
+    'revisionsRequested' : IDL.Nat,
     'mediaAssets' : IDL.Vec(IDL.Nat),
   });
   const BriefStatus = IDL.Variant({
@@ -128,6 +180,7 @@ export const idlFactory = ({ IDL }) => {
     'title' : IDL.Text,
     'topic' : IDL.Text,
     'expiresAt' : IDL.Opt(Time),
+    'platformConfig' : PlatformConfig,
     'isRecurring' : IDL.Bool,
     'briefId' : IDL.Text,
     'approvedCount' : IDL.Nat,
@@ -175,11 +228,13 @@ export const idlFactory = ({ IDL }) => {
   });
   const Result = IDL.Variant({ 'ok' : IDL.Nat, 'err' : TreasuryError });
   const McpServer = IDL.Service({
+    'add_escrow_to_brief' : IDL.Func([IDL.Text, IDL.Nat], [Result_1], []),
     'create_brief' : IDL.Func(
         [
           IDL.Text,
           IDL.Text,
           IDL.Text,
+          PlatformConfig,
           BriefRequirements,
           IDL.Nat,
           IDL.Nat,
@@ -222,7 +277,9 @@ export const idlFactory = ({ IDL }) => {
         [HttpRequestResult],
         ['query'],
       ),
+    'update_brief' : IDL.Func([IDL.Text, BriefUpdateRequest], [Result_1], []),
     'web_approve_article' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+    'web_approve_draft' : IDL.Func([IDL.Nat], [Result_1], []),
     'web_get_agent_stats' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(AgentStats)],
@@ -279,6 +336,17 @@ export const idlFactory = ({ IDL }) => {
       ),
     'web_get_triage_articles' : IDL.Func([], [IDL.Vec(Article)], ['query']),
     'web_reject_article' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+    'web_request_revision' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Text],
+        [Result_1],
+        [],
+      ),
+    'web_submit_revision' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
+    'web_update_draft' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Text],
+        [Result_1],
+        [],
+      ),
     'withdraw' : IDL.Func([IDL.Principal, IDL.Nat, Destination], [Result], []),
   });
   return McpServer;

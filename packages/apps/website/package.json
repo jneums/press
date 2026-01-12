@@ -13,6 +13,7 @@
   "dependencies": {
     "@dfinity/agent": "^3.4.3",
     "@dfinity/auth-client": "^3.4.3",
+    "@dfinity/principal": "^3.4.3",
     "@hookform/resolvers": "^5.2.2",
     "@icp-sdk/canisters": "^2.0.1",
     "@press/declarations": "workspace:*",

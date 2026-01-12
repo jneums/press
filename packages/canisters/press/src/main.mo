@@ -47,64 +47,84 @@ import IcpLedger "./IcpLedger";
 import ListBriefs "tools/list_briefs";
 import FindBriefs "tools/find_briefs";
 import SubmitArticle "tools/submit_article";
+import ViewPendingSubmissions "tools/view_pending_submissions";
+import EditDraft "tools/edit_draft";
+import SubmitRevision "tools/submit_revision";
 
-// // Migration function to remove mcpProof from Article type
+// Migration function to add platformConfig field to Brief type
 // (
 //   with migration = func(
 //     old_state : {
-//       var stable_articles_triage : Map.Map<Nat, { articleId : Nat; briefId : Text; agent : Principal; title : Text; content : Text; mediaAssets : [Nat]; mcpProof : PressTypes.McpProof; submittedAt : Time.Time; reviewedAt : ?Time.Time; reviewer : ?Principal; status : PressTypes.ArticleStatus; rejectionReason : ?Text; bountyPaid : Nat }>;
-//       var stable_articles_archive : Map.Map<Nat, { articleId : Nat; briefId : Text; agent : Principal; title : Text; content : Text; mediaAssets : [Nat]; mcpProof : PressTypes.McpProof; submittedAt : Time.Time; reviewedAt : ?Time.Time; reviewer : ?Principal; status : PressTypes.ArticleStatus; rejectionReason : ?Text; bountyPaid : Nat }>;
+//       var stable_briefs : Map.Map<Text, {
+//         briefId : Text;
+//         curator : Principal;
+//         title : Text;
+//         description : Text;
+//         topic : Text;
+//         requirements : PressTypes.BriefRequirements;
+//         bountyPerArticle : Nat;
+//         maxArticles : Nat;
+//         submittedCount : Nat;
+//         approvedCount : Nat;
+//         status : PressTypes.BriefStatus;
+//         createdAt : Time.Time;
+//         expiresAt : ?Time.Time;
+//         escrowSubaccount : Blob;
+//         escrowBalance : Nat;
+//         isRecurring : Bool;
+//         recurrenceIntervalNanos : ?Nat;
+//       }>;
 //     }
 //   ) : {
-//     var stable_articles_triage : Map.Map<Nat, PressTypes.Article>;
-//     var stable_articles_archive : Map.Map<Nat, PressTypes.Article>;
+//     var stable_briefs : Map.Map<Text, PressTypes.Brief>;
 //   } {
-//     // Migrate articles - remove mcpProof field
-//     let new_triage = Map.new<Nat, PressTypes.Article>();
-//     let new_archive = Map.new<Nat, PressTypes.Article>();
+//     let new_briefs = Map.new<Text, PressTypes.Brief>();
 
-//     for ((articleId, oldArticle) in Map.entries(old_state.stable_articles_triage)) {
-//       let newArticle : PressTypes.Article = {
-//         articleId = oldArticle.articleId;
-//         briefId = oldArticle.briefId;
-//         agent = oldArticle.agent;
-//         title = oldArticle.title;
-//         content = oldArticle.content;
-//         mediaAssets = oldArticle.mediaAssets;
-//         submittedAt = oldArticle.submittedAt;
-//         reviewedAt = oldArticle.reviewedAt;
-//         reviewer = oldArticle.reviewer;
-//         status = oldArticle.status;
-//         rejectionReason = oldArticle.rejectionReason;
-//         bountyPaid = oldArticle.bountyPaid;
+//     for ((briefId, oldBrief) in Map.entries(old_state.stable_briefs)) {
+//       // Create default platform config based on description/topic hints
+//       let defaultPlatformConfig : PressTypes.PlatformConfig = {
+//         platform = #other;
+//         includeHashtags = null;
+//         threadCount = null;
+//         isArticle = null;
+//         tags = [];
+//         includeTimestamps = null;
+//         targetDuration = null;
+//         subjectLine = null;
+//         citationStyle = null;
+//         includeAbstract = null;
+//         customInstructions = ?oldBrief.description; // Preserve old description as custom instructions
 //       };
-//       ignore Map.put(new_triage, Map.nhash, articleId, newArticle);
-//     };
 
-//     for ((articleId, oldArticle) in Map.entries(old_state.stable_articles_archive)) {
-//       let newArticle : PressTypes.Article = {
-//         articleId = oldArticle.articleId;
-//         briefId = oldArticle.briefId;
-//         agent = oldArticle.agent;
-//         title = oldArticle.title;
-//         content = oldArticle.content;
-//         mediaAssets = oldArticle.mediaAssets;
-//         submittedAt = oldArticle.submittedAt;
-//         reviewedAt = oldArticle.reviewedAt;
-//         reviewer = oldArticle.reviewer;
-//         status = oldArticle.status;
-//         rejectionReason = oldArticle.rejectionReason;
-//         bountyPaid = oldArticle.bountyPaid;
+//       let newBrief : PressTypes.Brief = {
+//         briefId = oldBrief.briefId;
+//         curator = oldBrief.curator;
+//         title = oldBrief.title;
+//         description = oldBrief.description;
+//         topic = oldBrief.topic;
+//         platformConfig = defaultPlatformConfig;
+//         requirements = oldBrief.requirements;
+//         bountyPerArticle = oldBrief.bountyPerArticle;
+//         maxArticles = oldBrief.maxArticles;
+//         submittedCount = oldBrief.submittedCount;
+//         approvedCount = oldBrief.approvedCount;
+//         status = oldBrief.status;
+//         createdAt = oldBrief.createdAt;
+//         expiresAt = oldBrief.expiresAt;
+//         escrowSubaccount = oldBrief.escrowSubaccount;
+//         escrowBalance = oldBrief.escrowBalance;
+//         isRecurring = oldBrief.isRecurring;
+//         recurrenceIntervalNanos = oldBrief.recurrenceIntervalNanos;
 //       };
-//       ignore Map.put(new_archive, Map.nhash, articleId, newArticle);
+//       ignore Map.put(new_briefs, Map.thash, briefId, newBrief);
 //     };
 
 //     {
-//       var stable_articles_triage = new_triage;
-//       var stable_articles_archive = new_archive;
+//       var stable_briefs = new_briefs;
 //     };
 //   }
 // )
+
 shared ({ caller = deployer }) persistent actor class McpServer(
   args : ?{
     owner : ?Principal;
@@ -392,6 +412,9 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     ListBriefs.config(),
     FindBriefs.config(),
     SubmitArticle.config(),
+    ViewPendingSubmissions.config(),
+    EditDraft.config(),
+    SubmitRevision.config(),
     // Add more tools here as you create them
   ];
 
@@ -414,6 +437,9 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       ("list_briefs", ListBriefs.handle(toolContext)),
       ("find_briefs", FindBriefs.handle(toolContext)),
       ("submit_article", SubmitArticle.handle(toolContext)),
+      ("view_pending_submissions", ViewPendingSubmissions.handle(toolContext)),
+      ("edit_draft", EditDraft.handle(toolContext)),
+      ("submit_revision", SubmitRevision.handle(toolContext)),
       // Add more tool implementations here as you create them
     ];
     beacon = beaconContext;
@@ -675,9 +701,35 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     briefManager.getBrief(briefId);
   };
 
-  /// Get all articles in triage (for curators to review)
-  public query func web_get_triage_articles() : async [PressTypes.Article] {
-    articleManager.getTriageArticles();
+  /// Get all articles in triage for the curator's briefs
+  public shared query ({ caller }) func web_get_triage_articles() : async [PressTypes.Article] {
+    // Get all briefs owned by the caller
+    let curatorBriefIds = Buffer.Buffer<Text>(0);
+    for ((briefId, brief) in Map.entries(stable_briefs)) {
+      if (brief.curator == caller) {
+        curatorBriefIds.add(briefId);
+      };
+    };
+
+    // Filter triage articles to only include those for the curator's briefs
+    // AND exclude #draft articles (only show #pending or later)
+    let filteredArticles = Buffer.Buffer<PressTypes.Article>(0);
+    for (article in articleManager.getTriageArticles().vals()) {
+      // Skip draft articles - they should only be visible to the author
+      switch (article.status) {
+        case (#draft) { /* skip */ };
+        case (_) {
+          // Check if this article's brief belongs to the caller
+          for (briefId in curatorBriefIds.vals()) {
+            if (article.briefId == briefId) {
+              filteredArticles.add(article);
+            };
+          };
+        };
+      };
+    };
+
+    Buffer.toArray(filteredArticles);
   };
 
   /// Get a specific article by ID
@@ -710,22 +762,40 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     articleManager.getMediaAsset(assetId);
   };
 
-  /// Get all articles in archive (approved/rejected content)
+  /// Get all articles in archive (approved/rejected content) for the curator's briefs
   /// Paginated to avoid large responses
   /// Optional status filter: null = all, ?#approved = approved only, ?#rejected = rejected only
-  public query func web_get_archived_articles(offset : Nat, limit : Nat, statusFilter : ?PressTypes.ArticleStatus) : async {
+  public shared query ({ caller }) func web_get_archived_articles(offset : Nat, limit : Nat, statusFilter : ?PressTypes.ArticleStatus) : async {
     articles : [PressTypes.Article];
     total : Nat;
   } {
+    // Get all briefs owned by the caller
+    let curatorBriefIds = Buffer.Buffer<Text>(0);
+    for ((briefId, brief) in Map.entries(stable_briefs)) {
+      if (brief.curator == caller) {
+        curatorBriefIds.add(briefId);
+      };
+    };
+
     let allArticles = Buffer.Buffer<PressTypes.Article>(0);
     for ((id, article) in Map.entries(stable_articles_archive)) {
-      // Apply status filter if provided
-      let include = switch (statusFilter) {
-        case (null) { true }; // No filter, include all
-        case (?filter) { article.status == filter };
+      // Check if this article's brief belongs to the caller
+      var belongsToCurator = false;
+      for (briefId in curatorBriefIds.vals()) {
+        if (article.briefId == briefId) {
+          belongsToCurator := true;
+        };
       };
-      if (include) {
-        allArticles.add(article);
+
+      if (belongsToCurator) {
+        // Apply status filter if provided
+        let shouldInclude = switch (statusFilter) {
+          case (null) true;
+          case (?filter) article.status == filter;
+        };
+        if (shouldInclude) {
+          allArticles.add(article);
+        };
       };
     };
 
@@ -860,6 +930,18 @@ shared ({ caller = deployer }) persistent actor class McpServer(
               case (#Ok(blockHeight)) {
                 // Payment successful, approve the article
                 let result = articleManager.approveArticle(articleId, caller, paymentAmount);
+
+                // Check if the brief is now full and reject remaining pending articles
+                if (brief.approvedCount + 1 >= brief.maxArticles) {
+                  let rejectedCount = articleManager.rejectPendingArticlesForBrief(
+                    briefId,
+                    ?articleId,
+                    caller,
+                    "Brief has been filled - all available slots have been approved",
+                  );
+                  Debug.print("web_approve_article - Brief filled, auto-rejected " # debug_show (rejectedCount) # " pending articles");
+                };
+
                 result;
               };
               case (#Err(error)) {
@@ -890,6 +972,101 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     articleManager.rejectArticle(articleId, caller, reason);
   };
 
+  /// Request revisions for an article (curators only)
+  /// This signals the curator is interested in the article but needs changes
+  /// On first revision request, reserves the slot (counts as acceptance)
+  /// Funds remain in escrow until final approval
+  public shared ({ caller }) func web_request_revision(
+    articleId : Nat,
+    briefId : Text,
+    feedback : Text,
+  ) : async Result.Result<(), Text> {
+    // Get article to verify it exists and get brief
+    switch (articleManager.getArticle(articleId)) {
+      case (?article) {
+        // Get brief to verify curator owns it
+        switch (briefManager.getBrief(briefId)) {
+          case (?brief) {
+            // Check that caller is the brief curator
+            if (caller != brief.curator) {
+              return #err("Only the brief curator can request revisions");
+            };
+
+            // If this is the first revision request (not already selected), reserve the slot
+            // This treats the revision request as an acceptance and closes the brief to other submissions
+            if (not article.selectedForRevision) {
+              switch (briefManager.reserveSlot(briefId)) {
+                case (#err(e)) { return #err(e) };
+                case (#ok()) {
+                  // If this is a single-slot brief, reject other pending articles
+                  if (brief.maxArticles == 1) {
+                    let rejectedCount = articleManager.rejectPendingArticlesForBrief(
+                      briefId,
+                      ?articleId,
+                      caller,
+                      "Brief has been filled - article selected for revision",
+                    );
+                    Debug.print("web_request_revision - Single-slot brief, auto-rejected " # debug_show (rejectedCount) # " pending articles");
+                  };
+                };
+              };
+            };
+
+            // Request the revision
+            articleManager.requestRevision(articleId, caller, feedback);
+          };
+          case null {
+            #err("Brief not found");
+          };
+        };
+      };
+      case null {
+        #err("Article not found");
+      };
+    };
+  };
+
+  /// Submit a revision for an article (agents only)
+  /// This allows the agent to respond to revision requests
+  public shared ({ caller }) func web_submit_revision(
+    articleId : Nat,
+    revisedContent : Text,
+  ) : async Result.Result<(), Text> {
+    articleManager.submitRevision(articleId, caller, revisedContent);
+  };
+
+  /// Agent approves their draft article to send to curator queue
+  public shared ({ caller }) func web_approve_draft(
+    articleId : Nat
+  ) : async Result.Result<(), Text> {
+    switch (articleManager.approveDraftToPending(articleId, caller)) {
+      case (#ok(briefId)) {
+        // Now increment the submitted count since article is moving from draft to pending
+        ignore briefManager.incrementSubmittedCount(briefId);
+        #ok();
+      };
+      case (#err(e)) {
+        #err(e);
+      };
+    };
+  };
+
+  /// Agent updates their draft article content
+  public shared ({ caller }) func web_update_draft(
+    articleId : Nat,
+    newTitle : Text,
+    newContent : Text,
+  ) : async Result.Result<(), Text> {
+    articleManager.updateDraftArticle(articleId, caller, newTitle, newContent);
+  };
+
+  /// Agent deletes their draft article
+  public shared ({ caller }) func web_delete_draft(
+    articleId : Nat
+  ) : async Result.Result<(), Text> {
+    articleManager.deleteDraftArticle(articleId, caller);
+  };
+
   // --- Brief Management Functions ---
 
   /// Create a new brief (curators only)
@@ -897,6 +1074,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     title : Text,
     description : Text,
     topic : Text,
+    platformConfig : PressTypes.PlatformConfig,
     requirements : PressTypes.BriefRequirements,
     bountyPerArticle : Nat,
     maxArticles : Nat,
@@ -927,6 +1105,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       title,
       description,
       topic,
+      platformConfig,
       requirements,
       bountyPerArticle,
       maxArticles,
@@ -983,6 +1162,168 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     } catch (e) {
       // Exception during transfer - close the brief
       ignore briefManager.closeBrief(briefId);
+      return #err("Failed to transfer funds: " # Error.message(e));
+    };
+  };
+
+  /// Update an existing brief (curators only)
+  /// Fairness constraints:
+  /// - Only the curator who created the brief can update it
+  /// - Brief must be open (can't update closed/cancelled briefs)
+  /// - Bounty can only INCREASE (protects authors who submitted based on original terms)
+  /// - MaxArticles can only INCREASE (requires additional escrow)
+  /// - ExpiresAt can only be extended, not shortened
+  /// - Requirements can be changed but should be done fairly
+  /// If bounty or maxArticles increase, additional escrow is required
+  public shared ({ caller }) func update_brief(
+    briefId : Text,
+    updates : PressTypes.BriefUpdateRequest,
+  ) : async Result.Result<(), Text> {
+    // First validate the update and calculate additional escrow needed
+    let updateResult = briefManager.updateBrief(briefId, caller, updates);
+
+    switch (updateResult) {
+      case (#err(msg)) {
+        return #err(msg);
+      };
+      case (#ok({ additionalEscrowNeeded })) {
+        // If additional escrow is needed, transfer it
+        if (additionalEscrowNeeded > 0) {
+          // Get ICP Ledger canister ID
+          let ledgerCanisterId = switch (icpLedger) {
+            case (?id) { id };
+            case (null) {
+              return #err("ICP Ledger not configured");
+            };
+          };
+
+          // Get the brief to get its subaccount
+          let brief = switch (briefManager.getBrief(briefId)) {
+            case (?b) { b };
+            case (null) {
+              return #err("Brief not found after update");
+            };
+          };
+
+          // Create actor reference to ICP Ledger for ICRC-2 transfer_from
+          let ledger = actor (Principal.toText(ledgerCanisterId)) : actor {
+            icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
+          };
+
+          try {
+            let transferResult = await ledger.icrc2_transfer_from({
+              from = { owner = caller; subaccount = null };
+              to = {
+                owner = thisPrincipal;
+                subaccount = ?brief.escrowSubaccount;
+              };
+              amount = additionalEscrowNeeded;
+              fee = null;
+              memo = null;
+              created_at_time = null;
+              spender_subaccount = null;
+            });
+
+            switch (transferResult) {
+              case (#Err(error)) {
+                // Transfer failed - but update already applied
+                // We should note this in the error message
+                let errorMsg = switch (error) {
+                  case (#InsufficientAllowance { allowance }) {
+                    "Brief updated but additional escrow transfer failed: Insufficient ICRC-2 allowance. Please approve " # Nat.toText(additionalEscrowNeeded + 10_000) # " e8s and call add_escrow_to_brief";
+                  };
+                  case (#InsufficientFunds { balance }) {
+                    "Brief updated but additional escrow transfer failed: Insufficient ICP balance. Need " # Nat.toText(additionalEscrowNeeded) # " e8s. Call add_escrow_to_brief when ready";
+                  };
+                  case _ {
+                    "Brief updated but additional escrow transfer failed. Call add_escrow_to_brief with " # Nat.toText(additionalEscrowNeeded) # " e8s";
+                  };
+                };
+                return #err(errorMsg);
+              };
+              case (#Ok(_blockIndex)) {
+                // Transfer successful - update the escrow balance
+                let newBalance = brief.escrowBalance + additionalEscrowNeeded;
+                ignore briefManager.updateEscrowBalance(briefId, newBalance);
+                return #ok();
+              };
+            };
+          } catch (e) {
+            return #err("Brief updated but escrow transfer failed: " # Error.message(e) # ". Call add_escrow_to_brief when ready");
+          };
+        } else {
+          // No additional escrow needed
+          return #ok();
+        };
+      };
+    };
+  };
+
+  /// Add additional escrow to a brief (useful after failed transfer during update)
+  public shared ({ caller }) func add_escrow_to_brief(
+    briefId : Text,
+    amount : Nat,
+  ) : async Result.Result<(), Text> {
+    // Get the brief
+    let brief = switch (briefManager.getBrief(briefId)) {
+      case (?b) { b };
+      case (null) {
+        return #err("Brief not found");
+      };
+    };
+
+    // Only curator can add escrow
+    if (brief.curator != caller) {
+      return #err("Only the brief curator can add escrow");
+    };
+
+    // Get ICP Ledger canister ID
+    let ledgerCanisterId = switch (icpLedger) {
+      case (?id) { id };
+      case (null) {
+        return #err("ICP Ledger not configured");
+      };
+    };
+
+    // Create actor reference to ICP Ledger
+    let ledger = actor (Principal.toText(ledgerCanisterId)) : actor {
+      icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
+    };
+
+    try {
+      let transferResult = await ledger.icrc2_transfer_from({
+        from = { owner = caller; subaccount = null };
+        to = { owner = thisPrincipal; subaccount = ?brief.escrowSubaccount };
+        amount = amount;
+        fee = null;
+        memo = null;
+        created_at_time = null;
+        spender_subaccount = null;
+      });
+
+      switch (transferResult) {
+        case (#Err(error)) {
+          let errorMsg = switch (error) {
+            case (#InsufficientAllowance { allowance }) {
+              "Insufficient ICRC-2 allowance. Please approve " # Nat.toText(amount + 10_000) # " e8s";
+            };
+            case (#InsufficientFunds { balance }) {
+              "Insufficient ICP balance: " # Nat.toText(balance) # " e8s";
+            };
+            case _ {
+              "Transfer failed";
+            };
+          };
+          return #err(errorMsg);
+        };
+        case (#Ok(_blockIndex)) {
+          // Transfer successful - update the escrow balance
+          let newBalance = brief.escrowBalance + amount;
+          ignore briefManager.updateEscrowBalance(briefId, newBalance);
+          return #ok();
+        };
+      };
+    } catch (e) {
       return #err("Failed to transfer funds: " # Error.message(e));
     };
   };

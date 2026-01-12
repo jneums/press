@@ -8,7 +8,7 @@ import { TransferICPDialog } from './TransferICPDialog';
 import { AllowanceManager } from './AllowanceManager';
 import { ApiKeysManager } from './ApiKeysManager';
 import { AccountIdentifier } from '@icp-sdk/canisters/ledger/icp';
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 import { Copy, RefreshCw, Check, LogOut } from 'lucide-react';
 import { useState } from 'react';
 

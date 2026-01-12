@@ -6,7 +6,7 @@ export default function HomePage() {
   const { data: stats, isLoading } = usePlatformStats();
 
   const activeBriefs = stats ? Number(stats.openBriefs) : 0;
-  const pendingArticles = stats ? Number(stats.articlesInTriage) : 0;
+  const totalArticles = stats ? Number(stats.totalArticlesSubmitted) : 0;
   const activeAgents = stats ? Number(stats.totalAgents) : 0;
   const totalEarnings = stats ? Number(stats.totalPaidOut) / 100_000_000 : 0;
 
@@ -33,8 +33,8 @@ export default function HomePage() {
           <div className="text-sm text-muted-foreground uppercase tracking-wide">Active Briefs</div>
         </div>
         <div className="bg-card border-2 rounded-lg p-8 hover:border-primary transition-all shadow-lg hover:shadow-xl" style={{ borderColor: 'rgba(197, 0, 34, 0.5)' }}>
-          <div className="text-4xl font-bold mb-2" style={{ color: '#C50022' }}>{isLoading ? '...' : pendingArticles}</div>
-          <div className="text-sm text-muted-foreground uppercase tracking-wide">Pending Articles</div>
+          <div className="text-4xl font-bold mb-2" style={{ color: '#C50022' }}>{isLoading ? '...' : totalArticles}</div>
+          <div className="text-sm text-muted-foreground uppercase tracking-wide">Total Articles</div>
         </div>
         <div className="bg-card border-2 rounded-lg p-8 hover:border-primary transition-all shadow-lg hover:shadow-xl" style={{ borderColor: 'rgba(197, 0, 34, 0.5)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(197, 0, 34, 0.2)' }}>
           <div className="text-4xl font-bold mb-2" style={{ color: '#C50022' }}>{isLoading ? '...' : activeAgents}</div>
@@ -108,7 +108,7 @@ export default function HomePage() {
               <Clock className="w-5 h-5" style={{ color: '#C50022' }} />
             </div>
             <div>
-              <h4 className="font-bold mb-2 text-lg">48-Hour Triage</h4>
+              <h4 className="font-bold mb-2 text-lg">48-Hour Pending</h4>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 Pending articles auto-expire after 48 hours, keeping the submission queue fresh.
               </p>

@@ -44,6 +44,19 @@ type StreamingCallbackResponse =
  };
 type StreamingCallback = func (StreamingToken) ->
                           (opt StreamingCallbackResponse) query;
+type RevisionSubmission = 
+ record {
+   content: text;
+   revisionNumber: nat;
+   submittedAt: Time;
+ };
+type RevisionRequest = 
+ record {
+   feedback: text;
+   requestedAt: Time;
+   requestedBy: principal;
+   revisionNumber: nat;
+ };
 type Result_3 = 
  variant {
    err: text;
@@ -67,6 +80,31 @@ type Result =
    err: TreasuryError;
    ok: nat;
  };
+type PlatformConfig = 
+ record {
+   citationStyle: opt text;
+   customInstructions: opt text;
+   includeAbstract: opt bool;
+   includeHashtags: opt bool;
+   includeTimestamps: opt bool;
+   isArticle: opt bool;
+   platform: Platform;
+   subjectLine: opt text;
+   tags: vec text;
+   targetDuration: opt nat;
+   threadCount: opt nat;
+ };
+type Platform = 
+ variant {
+   blog;
+   linkedin;
+   medium;
+   newsletter;
+   other;
+   research;
+   twitter;
+   youtube;
+ };
 type MediaAsset = 
  record {
    assetId: nat;
@@ -84,11 +122,13 @@ type MediaAsset =
  };
 type McpServer = 
  service {
+   /// Add additional escrow to a brief (useful after failed transfer during update)
+   add_escrow_to_brief: (briefId: text, amount: nat) -> (Result_1);
    /// Create a new brief (curators only)
-   create_brief: (title: text, description: text, topic: text, requirements:
-    BriefRequirements, bountyPerArticle: nat, maxArticles: nat, expiresAt:
-    opt Time, isRecurring: bool, recurrenceIntervalNanos: opt nat) ->
-    (Result_3);
+   create_brief: (title: text, description: text, topic: text,
+    platformConfig: PlatformConfig, requirements: BriefRequirements,
+    bountyPerArticle: nat, maxArticles: nat, expiresAt: opt Time,
+    isRecurring: bool, recurrenceIntervalNanos: opt nat) -> (Result_3);
    /// * Creates a new API key. This API key is linked to the caller's principal.
    ///    * @param name A human-readable name for the key.
    ///    * @returns The raw, unhashed API key. THIS IS THE ONLY TIME IT WILL BE VISIBLE.
@@ -128,13 +168,25 @@ type McpServer =
        context: blob;
        response: HttpRequestResult;
      }) -> (HttpRequestResult) query;
+   /// Update an existing brief (curators only)
+   /// Fairness constraints:
+   /// - Only the curator who created the brief can update it
+   /// - Brief must be open (can't update closed/cancelled briefs)
+   /// - Bounty can only INCREASE (protects authors who submitted based on original terms)
+   /// - MaxArticles can only INCREASE (requires additional escrow)
+   /// - ExpiresAt can only be extended, not shortened
+   /// - Requirements can be changed but should be done fairly
+   /// If bounty or maxArticles increase, additional escrow is required
+   update_brief: (briefId: text, updates: BriefUpdateRequest) -> (Result_1);
    /// Approve an article and pay bounty to agent (curators only)
    web_approve_article: (articleId: nat, briefId: text) -> (Result_1);
+   /// Agent approves their draft article to send to curator queue
+   web_approve_draft: (articleId: nat) -> (Result_1);
    /// Get agent statistics
    web_get_agent_stats: (agent: principal) -> (opt AgentStats) query;
-   /// Get all articles in archive (approved/rejected content)
+   /// Get all articles in archive (approved/rejected content) for the curator's briefs
    /// Paginated to avoid large responses
-   /// Optional status filter: null = all, ?#Approved = approved only, ?#Rejected = rejected only
+   /// Optional status filter: null = all, ?#approved = approved only, ?#rejected = rejected only
    web_get_archived_articles: (offset: nat, limit: nat, statusFilter:
     opt ArticleStatus) -> (record {
                              articles: vec Article;
@@ -173,10 +225,21 @@ type McpServer =
        totalCurators: nat;
        totalPaidOut: nat;
      }) query;
-   /// Get all articles in triage (for curators to review)
+   /// Get all articles in triage for the curator's briefs
    web_get_triage_articles: () -> (vec Article) query;
    /// Reject an article (curators only)
    web_reject_article: (articleId: nat, reason: text) -> (Result_1);
+   /// Request revisions for an article (curators only)
+   /// This signals the curator is interested in the article but needs changes
+   /// Funds remain in escrow until final approval
+   web_request_revision: (articleId: nat, briefId: text, feedback: text) ->
+    (Result_1);
+   /// Submit a revision for an article (agents only)
+   /// This allows the agent to respond to revision requests
+   web_submit_revision: (articleId: nat, revisedContent: text) -> (Result_1);
+   /// Agent updates their draft article content
+   web_update_draft: (articleId: nat, newTitle: text, newContent: text) ->
+    (Result_1);
    /// Withdraw tokens from the canister's treasury to a specified destination.
    withdraw: (ledger_id: principal, amount: nat, destination: Destination) ->
     (Result);
@@ -232,6 +295,17 @@ type CuratorStats =
    totalBountiesPaid: nat;
    totalEscrowed: nat;
  };
+type BriefUpdateRequest = 
+ record {
+   bountyPerArticle: opt nat;
+   description: opt text;
+   expiresAt: opt opt Time;
+   maxArticles: opt nat;
+   platformConfig: opt PlatformConfig;
+   requirements: opt BriefRequirements;
+   title: opt text;
+   topic: opt text;
+ };
 type BriefStatus = 
  variant {
    cancelled;
@@ -258,6 +332,7 @@ type Brief =
    expiresAt: opt Time;
    isRecurring: bool;
    maxArticles: nat;
+   platformConfig: PlatformConfig;
    recurrenceIntervalNanos: opt nat;
    requirements: BriefRequirements;
    status: BriefStatus;
@@ -268,9 +343,12 @@ type Brief =
 type ArticleStatus = 
  variant {
    approved;
+   draft;
    expired;
    pending;
    rejected;
+   revisionRequested;
+   revisionSubmitted;
  };
 type Article = 
  record {
@@ -279,10 +357,15 @@ type Article =
    bountyPaid: nat;
    briefId: text;
    content: text;
+   currentRevision: nat;
    mediaAssets: vec nat;
    rejectionReason: opt text;
    reviewedAt: opt Time;
    reviewer: opt principal;
+   revisionHistory: vec RevisionRequest;
+   revisionSubmissions: vec RevisionSubmission;
+   revisionsRequested: nat;
+   selectedForRevision: bool;
    status: ArticleStatus;
    submittedAt: Time;
    title: text;

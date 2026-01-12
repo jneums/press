@@ -32,7 +32,7 @@ export default function Navigation() {
   return (
     <>
       {/* Floating Navigation */}
-      <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-7xl">
+      <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-6xl">
         <div className="backdrop-blur-xl border-2 rounded-full shadow-2xl px-8" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', borderColor: 'rgba(197, 0, 34, 0.4)', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(197, 0, 34, 0.3), 0 0 10px rgba(197, 0, 34, 0.5)' }}>
           <div className="flex h-16 items-center justify-between">
             <Link 

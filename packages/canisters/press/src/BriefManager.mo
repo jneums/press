@@ -38,6 +38,9 @@ module {
       hash;
     };
 
+    // Default brief expiration: 2 weeks in nanoseconds
+    let DEFAULT_BRIEF_EXPIRATION_NANOS : Int = 14 * 24 * 60 * 60 * 1_000_000_000;
+
     /// Create a new brief
     /// Returns the brief ID and escrow subaccount for funding
     public func createBrief(
@@ -45,6 +48,7 @@ module {
       title : Text,
       description : Text,
       topic : Text,
+      platformConfig : PressTypes.PlatformConfig,
       requirements : PressTypes.BriefRequirements,
       bountyPerArticle : Nat,
       maxArticles : Nat,
@@ -60,12 +64,19 @@ module {
 
       let subaccount = briefIdToSubaccount(briefId);
 
+      // Apply default expiration of 2 weeks if not specified
+      let effectiveExpiresAt : ?Time.Time = switch (expiresAt) {
+        case (?exp) { ?exp };
+        case (null) { ?(now + DEFAULT_BRIEF_EXPIRATION_NANOS) };
+      };
+
       let brief : Brief = {
         briefId = briefId;
         curator = curator;
         title = title;
         description = description;
         topic = topic;
+        platformConfig = platformConfig;
         requirements = requirements;
         bountyPerArticle = bountyPerArticle;
         maxArticles = maxArticles;
@@ -73,7 +84,7 @@ module {
         approvedCount = 0;
         status = #open;
         createdAt = now;
-        expiresAt = expiresAt;
+        expiresAt = effectiveExpiresAt;
         escrowSubaccount = subaccount;
         escrowBalance = initialEscrowBalance;
         isRecurring = isRecurring;
@@ -148,6 +159,7 @@ module {
               title = brief.title;
               description = brief.description;
               topic = brief.topic;
+              platformConfig = brief.platformConfig;
               requirements = brief.requirements;
               bountyPerArticle = brief.bountyPerArticle;
               maxArticles = brief.maxArticles;
@@ -172,6 +184,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -202,6 +215,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -240,6 +254,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -293,6 +308,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -327,6 +343,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -337,6 +354,57 @@ module {
             expiresAt = brief.expiresAt;
             escrowSubaccount = brief.escrowSubaccount;
             escrowBalance = newBalance;
+            isRecurring = brief.isRecurring;
+            recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
+          };
+          ignore Map.put(briefs, thash, briefId, updated);
+          #ok();
+        };
+        case null {
+          #err("Brief not found");
+        };
+      };
+    };
+
+    /// Reserve a slot for an article that's being selected for revision
+    /// This prevents other submissions from taking the slot while revisions are in progress
+    public func reserveSlot(briefId : Text) : Result.Result<(), Text> {
+      switch (Map.get(briefs, thash, briefId)) {
+        case (?brief) {
+          // Check if there are slots available
+          if (brief.approvedCount >= brief.maxArticles) {
+            return #err("No slots available - brief is full");
+          };
+
+          // Check if brief is still open
+          if (brief.status != #open) {
+            return #err("Brief is not open for submissions");
+          };
+
+          // If this is a single-slot brief, close it now that we've selected an article
+          let newStatus = if (brief.maxArticles == 1) {
+            #closed;
+          } else {
+            brief.status;
+          };
+
+          let updated = {
+            briefId = brief.briefId;
+            curator = brief.curator;
+            title = brief.title;
+            description = brief.description;
+            topic = brief.topic;
+            platformConfig = brief.platformConfig;
+            requirements = brief.requirements;
+            bountyPerArticle = brief.bountyPerArticle;
+            maxArticles = brief.maxArticles;
+            submittedCount = brief.submittedCount;
+            approvedCount = brief.approvedCount;
+            status = newStatus;
+            createdAt = brief.createdAt;
+            expiresAt = brief.expiresAt;
+            escrowSubaccount = brief.escrowSubaccount;
+            escrowBalance = brief.escrowBalance;
             isRecurring = brief.isRecurring;
             recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
           };
@@ -370,6 +438,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -436,6 +505,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -574,6 +644,7 @@ module {
             title = brief.title;
             description = brief.description;
             topic = brief.topic;
+            platformConfig = brief.platformConfig;
             requirements = brief.requirements;
             bountyPerArticle = brief.bountyPerArticle;
             maxArticles = brief.maxArticles;
@@ -599,6 +670,152 @@ module {
     /// Get next brief ID for persistence
     public func getNextBriefId() : Nat {
       nextBriefId;
+    };
+
+    /// Update a brief with fairness constraints
+    /// - Only the curator who created the brief can update it
+    /// - Brief must be open (can't update closed/cancelled briefs)
+    /// - Bounty can only INCREASE (protects existing submissions)
+    /// - MaxArticles can only INCREASE (requires additional escrow)
+    /// - ExpiresAt can only be extended, not shortened
+    /// - Requirements changes are allowed but logged (curator should be fair)
+    /// Returns the additional escrow needed if maxArticles or bounty increased
+    public func updateBrief(
+      briefId : Text,
+      caller : Principal,
+      updates : PressTypes.BriefUpdateRequest,
+    ) : Result.Result<{ additionalEscrowNeeded : Nat }, Text> {
+      switch (Map.get(briefs, thash, briefId)) {
+        case null { #err("Brief not found") };
+        case (?brief) {
+          // Only curator can update their own brief
+          if (brief.curator != caller) {
+            return #err("Only the brief curator can update this brief");
+          };
+
+          // Can only update open briefs
+          if (brief.status != #open) {
+            return #err("Cannot update a closed or cancelled brief");
+          };
+
+          // Validate bounty change - can only increase
+          let newBounty = switch (updates.bountyPerArticle) {
+            case (?bounty) {
+              if (bounty < brief.bountyPerArticle) {
+                return #err("Bounty can only be increased, not decreased. Current: " # Nat.toText(brief.bountyPerArticle) # ", Requested: " # Nat.toText(bounty));
+              };
+              bounty;
+            };
+            case null { brief.bountyPerArticle };
+          };
+
+          // Validate maxArticles change - can only increase
+          let newMaxArticles = switch (updates.maxArticles) {
+            case (?max) {
+              if (max < brief.maxArticles) {
+                return #err("Max articles can only be increased, not decreased. Current: " # Nat.toText(brief.maxArticles) # ", Requested: " # Nat.toText(max));
+              };
+              // Must be at least approvedCount (can't set max lower than already approved)
+              if (max < brief.approvedCount) {
+                return #err("Max articles cannot be less than already approved count: " # Nat.toText(brief.approvedCount));
+              };
+              max;
+            };
+            case null { brief.maxArticles };
+          };
+
+          // Validate expiresAt change - can only extend
+          let newExpiresAt = switch (updates.expiresAt) {
+            case (null) { brief.expiresAt }; // No change
+            case (?newExpiry) {
+              switch (newExpiry) {
+                case (null) { null }; // Remove expiry (extend indefinitely) - always allowed
+                case (?newTime) {
+                  switch (brief.expiresAt) {
+                    case (null) { ?newTime }; // Setting expiry where there was none - allowed
+                    case (?currentTime) {
+                      if (newTime < currentTime) {
+                        return #err("Expiry can only be extended, not shortened");
+                      };
+                      ?newTime;
+                    };
+                  };
+                };
+              };
+            };
+          };
+
+          // Calculate additional escrow needed
+          let currentTotalEscrow = brief.bountyPerArticle * brief.maxArticles;
+          let newTotalEscrow = newBounty * newMaxArticles;
+          let additionalEscrowNeeded = if (newTotalEscrow > currentTotalEscrow) {
+            newTotalEscrow - currentTotalEscrow;
+          } else {
+            0;
+          };
+
+          // Apply updates
+          let updatedBrief : Brief = {
+            briefId = brief.briefId;
+            curator = brief.curator;
+            title = switch (updates.title) {
+              case (?t) t;
+              case null brief.title;
+            };
+            description = switch (updates.description) {
+              case (?d) d;
+              case null brief.description;
+            };
+            topic = switch (updates.topic) {
+              case (?t) t;
+              case null brief.topic;
+            };
+            platformConfig = switch (updates.platformConfig) {
+              case (?p) p;
+              case null brief.platformConfig;
+            };
+            requirements = switch (updates.requirements) {
+              case (?r) r;
+              case null brief.requirements;
+            };
+            bountyPerArticle = newBounty;
+            maxArticles = newMaxArticles;
+            submittedCount = brief.submittedCount;
+            approvedCount = brief.approvedCount;
+            status = brief.status;
+            createdAt = brief.createdAt;
+            expiresAt = newExpiresAt;
+            escrowSubaccount = brief.escrowSubaccount;
+            escrowBalance = brief.escrowBalance;
+            isRecurring = brief.isRecurring;
+            recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
+          };
+
+          ignore Map.put(briefs, thash, briefId, updatedBrief);
+
+          // Update curator stats last activity
+          switch (Map.get(curatorStats, phash, caller)) {
+            case (?stats) {
+              let updatedStats : CuratorStats = {
+                curator = stats.curator;
+                briefsCreated = stats.briefsCreated;
+                articlesReviewed = stats.articlesReviewed;
+                articlesApproved = stats.articlesApproved;
+                articlesRejected = stats.articlesRejected;
+                totalBountiesPaid = stats.totalBountiesPaid;
+                totalEscrowed = stats.totalEscrowed;
+                averageReviewTime = stats.averageReviewTime;
+                firstBrief = stats.firstBrief;
+                lastActivity = Time.now();
+              };
+              ignore Map.put(curatorStats, phash, caller, updatedStats);
+            };
+            case null {};
+          };
+
+          #ok({ additionalEscrowNeeded = additionalEscrowNeeded });
+        };
+      };
     };
   };
 };

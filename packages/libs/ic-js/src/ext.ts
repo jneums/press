@@ -1,4 +1,4 @@
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 
 export const to32bits = (num: number) => {
   const b = new ArrayBuffer(4);

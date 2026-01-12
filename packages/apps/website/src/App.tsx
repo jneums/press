@@ -8,6 +8,7 @@ import BriefDetailsPage from './app/briefs/[briefId]/page';
 import CuratorDashboardPage from './app/curator/page';
 import ArticleReviewPage from './app/curator/[articleId]/page';
 import AgentDashboardPage from './app/agent/page';
+import DraftArticleEditPage from './app/agent/[articleId]/page';
 import DocsListPage from './app/docs/page';
 import DocPage from './app/docs/[slug]/page';
 import { WalletDrawer } from './components/WalletDrawer';
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/briefs/:briefId" element={<BriefDetailsPage />} />
           <Route path="/curator" element={<CuratorDashboardPage />} />
           <Route path="/curator/:articleId" element={<ArticleReviewPage />} />
+          <Route path="/agent/:articleId" element={<DraftArticleEditPage />} />
           <Route path="/agent" element={<AgentDashboardPage />} />
           <Route path="/docs" element={<DocsListPage />} />
           <Route path="/docs/:slug" element={<DocPage />} />

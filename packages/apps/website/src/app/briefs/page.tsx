@@ -37,9 +37,40 @@ export default function BriefsPage() {
     });
   };
 
+  const formatDeadline = (expiresAt: bigint | undefined) => {
+    if (!expiresAt) return null;
+    const now = Date.now() * 1_000_000; // Current time in nanos
+    const expiryNanos = Number(expiresAt);
+    const remainingMs = (expiryNanos - now) / 1_000_000;
+    
+    if (remainingMs <= 0) return { text: 'EXPIRED', urgent: true, expired: true };
+    
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingDays = Math.floor(remainingHours / 24);
+    const hoursInDay = remainingHours % 24;
+    
+    const expiryDate = new Date(expiryNanos / 1_000_000);
+    const dateStr = expiryDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    
+    if (remainingDays > 7) {
+      return { text: dateStr, urgent: false, expired: false };
+    } else if (remainingDays > 0) {
+      return { text: `${remainingDays}d ${hoursInDay}h left (${dateStr})`, urgent: remainingDays <= 2, expired: false };
+    } else {
+      return { text: `${remainingHours}h left!`, urgent: true, expired: false };
+    }
+  };
+
   const BriefCard = ({ brief }: { brief: any }) => {
     const acceptanceRate = 0; // TODO: Calculate from curator stats
     const slotsAvailable = Number(brief.maxArticles) - Number(brief.approvedCount);
+    const deadline = formatDeadline(brief.expiresAt?.[0]);
 
     return (
       <Link 
@@ -47,11 +78,11 @@ export default function BriefsPage() {
         className="block bg-card border-2 rounded-lg p-8 hover:border-primary transition-all shadow-lg hover:shadow-xl"
         style={{ borderColor: 'rgba(197, 0, 34, 0.4)', backgroundColor: 'rgba(255, 255, 255, 0.02)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(197, 0, 34, 0.2), inset 0 0 30px rgba(197, 0, 34, 0.05)' }}
       >
-        <div className="flex justify-between items-start mb-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-3">
-              <h3 className="text-2xl font-bold">{brief.title}</h3>
-              <span className="px-3 py-1 rounded text-xs font-semibold border" style={{ backgroundColor: 'rgba(197, 0, 34, 0.1)', color: '#C50022', borderColor: 'rgba(197, 0, 34, 0.3)' }}>
+        <div className="flex justify-between items-start gap-4 mb-6">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-2xl font-bold mb-2">{brief.title}</h3>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="px-3 py-1 rounded text-xs font-semibold border whitespace-nowrap" style={{ backgroundColor: 'rgba(197, 0, 34, 0.1)', color: '#C50022', borderColor: 'rgba(197, 0, 34, 0.3)' }}>
                 {brief.topic}
               </span>
             </div>
@@ -59,9 +90,44 @@ export default function BriefsPage() {
               Posted {formatDate(brief.createdAt)}
             </div>
           </div>
-          <span className="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold border border-green-500/30">
-            {slotsAvailable} Slots Available
-          </span>
+          <div className="flex-shrink-0">
+            <span className="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold border border-green-500/30 whitespace-nowrap">
+              {slotsAvailable} Slots Available
+            </span>
+          </div>
+        </div>
+
+        {/* DEADLINE - Bold and prominent */}
+        <div 
+          className={`mb-6 p-4 rounded-lg border-2 flex items-center gap-3 ${
+            deadline?.expired 
+              ? 'bg-red-900/30 border-red-500' 
+              : deadline?.urgent 
+                ? 'bg-orange-900/30 border-orange-500 animate-pulse' 
+                : deadline 
+                  ? 'bg-yellow-900/20 border-yellow-500/50' 
+                  : 'bg-green-900/20 border-green-500/30'
+          }`}
+        >
+          <span className="text-2xl">⏰</span>
+          <div>
+            <div className={`text-xs uppercase tracking-wide font-bold ${
+              deadline?.expired ? 'text-red-400' : deadline?.urgent ? 'text-orange-400' : 'text-yellow-400'
+            }`}>
+              SUBMISSION DEADLINE
+            </div>
+            <div className={`text-lg font-bold ${
+              deadline?.expired 
+                ? 'text-red-400' 
+                : deadline?.urgent 
+                  ? 'text-orange-400' 
+                  : deadline 
+                    ? 'text-yellow-300' 
+                    : 'text-green-400'
+            }`}>
+              {deadline ? deadline.text : 'No deadline (open-ended)'}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">

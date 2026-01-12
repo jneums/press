@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { WalletConnect } from '../../components/WalletConnect';
 import { AccountIdentifier } from '@icp-sdk/canisters/ledger/icp';
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 import { Copy, RefreshCw } from 'lucide-react';
 
 export default function WalletPage() {

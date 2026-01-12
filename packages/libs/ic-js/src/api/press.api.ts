@@ -1,15 +1,72 @@
 import { getCanisterId, getHost } from '../config.js';
+import type { Identity } from '@dfinity/agent';
+
+// Accept either Identity or Plug agent
+type IdentityOrAgent = Identity | any;
+
+// Helper function to detect if this is a Plug agent
+// Plug agents have 'agent' property and are not standard Identity objects
+function isPlugAgent(identityOrAgent: any): boolean {
+  return identityOrAgent && 
+         typeof identityOrAgent === 'object' && 
+         'agent' in identityOrAgent &&
+         'getPrincipal' in identityOrAgent &&
+         typeof identityOrAgent.getPrincipal === 'function';
+}
 
 /**
- * Get Press actor from an existing agent
+ * Get Press actor from an existing agent or identity
+ * If no agent provided, creates an anonymous agent
  */
-async function getPressActor(agent: any): Promise<any> {
-  const { Actor } = await import('@icp-sdk/core/agent');
-  
-  // Dynamically import the Press declarations
+async function getPressActor(identityOrAgent?: IdentityOrAgent): Promise<any> {
   const { Press } = await import('@press/declarations');
 
+  // Check if it's a Plug agent - use window.ic.plug.createActor
+  if (isPlugAgent(identityOrAgent) && typeof globalThis !== 'undefined' && (globalThis as any).window?.ic?.plug?.createActor) {
+    // Check if Plug is still connected before calling createActor
+    const isConnected = await (globalThis as any).window.ic.plug.isConnected();
+    if (!isConnected) {
+      throw new Error('Plug session expired. Please reconnect.');
+    }
+    const canisterId = getCanisterId('PRESS');
+    return await (globalThis as any).window.ic.plug.createActor({
+      canisterId,
+      interfaceFactory: Press.idlFactory,
+    });
+  }
+
+  // For non-Plug or anonymous, use standard actor creation
+  const { Actor, HttpAgent, AnonymousIdentity } = await import('@dfinity/agent');
   const canisterId = getCanisterId('PRESS');
+  const host = getHost();
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+
+  // If no identity provided, create anonymous agent
+  if (!identityOrAgent) {
+    const agent = await HttpAgent.create({
+      host,
+      identity: new AnonymousIdentity(),
+    });
+    
+    if (isLocal) {
+      await agent.fetchRootKey();
+    }
+    
+    return Actor.createActor(Press.idlFactory, {
+      agent,
+      canisterId,
+    });
+  }
+
+  // It's a standard Identity - wrap it in HttpAgent
+  const agent = await HttpAgent.create({
+    host,
+    identity: identityOrAgent as Identity,
+  });
+  
+  if (isLocal) {
+    await agent.fetchRootKey();
+  }
   
   return Actor.createActor(Press.idlFactory, {
     agent,
@@ -173,6 +230,21 @@ export async function getPlatformStats(agent: any): Promise<{
 
 // ===== Brief Management Functions =====
 
+// Platform config type
+interface PlatformConfig {
+  platform: { [key: string]: null };
+  includeHashtags: boolean[];
+  threadCount: bigint[];
+  isArticle: boolean[];
+  tags: string[];
+  includeTimestamps: boolean[];
+  targetDuration: bigint[];
+  subjectLine: string[];
+  citationStyle: string[];
+  includeAbstract: boolean[];
+  customInstructions: string[];
+}
+
 /**
  * Create a new brief
  */
@@ -182,6 +254,7 @@ export async function createBrief(
     title: string;
     description: string;
     topic: string;
+    platformConfig: PlatformConfig;
     requirements: {
       requiredTopics: string[];
       format: string | null;
@@ -209,6 +282,7 @@ export async function createBrief(
     params.title,
     params.description,
     params.topic,
+    params.platformConfig,
     requirements,
     params.bountyPerArticle,
     params.maxArticles,
@@ -242,6 +316,138 @@ export async function approveArticle(agent: any, articleId: bigint, briefId: str
 export async function rejectArticle(agent: any, articleId: bigint, reason: string): Promise<void> {
   const actor = await getPressActor(agent);
   const result = await actor.web_reject_article(articleId, reason);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Request revisions for an article (curators only)
+ * This signals the curator is interested in the article but needs changes
+ * Funds remain in escrow until final approval
+ */
+export async function requestRevision(agent: any, articleId: bigint, briefId: string, feedback: string): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.web_request_revision(articleId, briefId, feedback);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Submit a revision for an article (agents only)
+ * This allows the agent to respond to revision requests
+ */
+export async function submitRevision(agent: any, articleId: bigint, revisedContent: string): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.web_submit_revision(articleId, revisedContent);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Agent approves their draft article to send to curator queue
+ */
+export async function approveDraft(agent: any, articleId: bigint): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.web_approve_draft(articleId);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Agent updates their draft article content
+ */
+export async function updateDraft(agent: any, articleId: bigint, newTitle: string, newContent: string): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.web_update_draft(articleId, newTitle, newContent);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Agent deletes their draft article
+ */
+export async function deleteDraft(agent: any, articleId: bigint): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.web_delete_draft(articleId);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Update brief request - all fields are optional
+ * Constraints enforced by the backend:
+ * - bountyPerArticle can only INCREASE
+ * - maxArticles can only INCREASE
+ * - expiresAt can only be extended, not shortened
+ */
+export interface UpdateBriefParams {
+  title?: string;
+  description?: string;
+  topic?: string;
+  platformConfig?: PlatformConfig;
+  requirements?: {
+    requiredTopics: string[];
+    format: string | null;
+    minWords?: bigint;
+    maxWords?: bigint;
+  };
+  bountyPerArticle?: bigint;
+  maxArticles?: bigint;
+  expiresAt?: bigint | null; // null = remove expiry, undefined = no change
+}
+
+/**
+ * Update an existing brief (curator only)
+ * Only the curator who created the brief can update it.
+ * The brief must be open (not closed or cancelled).
+ * Fairness constraints are enforced by the backend.
+ */
+export async function updateBrief(agent: any, briefId: string, params: UpdateBriefParams): Promise<void> {
+  const actor = await getPressActor(agent);
+  
+  // Build the update request with proper Candid optional types
+  const updateRequest = {
+    title: params.title !== undefined ? [params.title] : [],
+    description: params.description !== undefined ? [params.description] : [],
+    topic: params.topic !== undefined ? [params.topic] : [],
+    platformConfig: params.platformConfig !== undefined ? [params.platformConfig] : [],
+    requirements: params.requirements !== undefined ? [{
+      requiredTopics: params.requirements.requiredTopics,
+      format: params.requirements.format ? [params.requirements.format] : [],
+      minWords: params.requirements.minWords !== undefined ? [params.requirements.minWords] : [],
+      maxWords: params.requirements.maxWords !== undefined ? [params.requirements.maxWords] : [],
+    }] : [],
+    bountyPerArticle: params.bountyPerArticle !== undefined ? [params.bountyPerArticle] : [],
+    maxArticles: params.maxArticles !== undefined ? [params.maxArticles] : [],
+    // For expiresAt: null means remove expiry (wrap null in array), undefined means no change (empty array)
+    expiresAt: params.expiresAt === null ? [[]] : params.expiresAt !== undefined ? [[params.expiresAt]] : [],
+  };
+  
+  const result = await actor.update_brief(briefId, updateRequest);
+  
+  if ('err' in result) {
+    throw new Error(result.err);
+  }
+}
+
+/**
+ * Add additional escrow to a brief
+ */
+export async function addEscrowToBrief(agent: any, briefId: string, amount: bigint): Promise<void> {
+  const actor = await getPressActor(agent);
+  const result = await actor.add_escrow_to_brief(briefId, amount);
   
   if ('err' in result) {
     throw new Error(result.err);

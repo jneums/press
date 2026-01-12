@@ -1,9 +1,12 @@
 {
   "icp_ledger": {
-    "ic": "ryjl3-tyaaa-aaaab-qaa6a-cai"
+    "ic": "ryjl3-tyaaa-aaaaa-aaaba-cai"
+  },
+  "press_dev": {
+    "ic": "xvg6y-piaaa-aaaai-q4n7q-cai"
   },
   "press": {
-    "ic": "xvg6y-piaaa-aaaai-q4n7q-cai"
+    "ic": "ezirm-3yaaa-aaaai-q4r5a-cai"
   },
   "website": {
     "ic": "apk5r-uaaaa-aaaai-q4oaa-cai"

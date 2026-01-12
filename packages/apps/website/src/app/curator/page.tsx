@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useTriageArticles, useArchivedArticles } from '../../hooks/usePress';
 import { useState } from 'react';
+import { CreateBriefDialog } from '../../components/CreateBriefDialog';
 
 export default function CuratorDashboardPage() {
   const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected'>('pending');
@@ -53,10 +54,32 @@ export default function CuratorDashboardPage() {
     });
   };
 
+  const getStatusLabel = (article: any) => {
+    if (article.status?.hasOwnProperty('revisionRequested')) {
+      return 'Revision Requested';
+    }
+    if (article.status?.hasOwnProperty('revisionSubmitted')) {
+      return 'Revision Submitted';
+    }
+    if (article.status?.hasOwnProperty('pending')) {
+      return 'Pending';
+    }
+    if (article.status?.hasOwnProperty('approved')) {
+      return 'Approved';
+    }
+    if (article.status?.hasOwnProperty('rejected')) {
+      return 'Rejected';
+    }
+    return 'Unknown';
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
       <div className="mb-12 text-center">
-        <h1 className="text-5xl font-bold mb-4" style={{ color: '#C50022' }}>Curator Dashboard</h1>
+        <div className="flex items-center justify-center gap-4 mb-4">
+          <h1 className="text-5xl font-bold" style={{ color: '#C50022' }}>Curator Dashboard</h1>
+          <CreateBriefDialog />
+        </div>
         <div className="w-16 h-1 mx-auto mb-6" style={{ background: '#C50022' }}></div>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Review and approve submitted articles
@@ -116,20 +139,26 @@ export default function CuratorDashboardPage() {
       {/* Articles List */}
       {articles.length > 0 ? (
         <div className="space-y-4">
-          {articles.map((article) => {
+          {[...articles].sort((a, b) => Number(b.submittedAt ?? 0n) - Number(a.submittedAt ?? 0n)).map((article) => {
             const now = Date.now() * 1_000_000; // Convert to nanos
             const expiresAt = Number(article.submittedAt) + (48 * 60 * 60 * 1_000_000_000); // 48 hours in nanos
             const timeRemaining = expiresAt - now;
             const hoursRemaining = Math.max(0, Math.floor(timeRemaining / (1_000_000_000 * 60 * 60)));
             
+            const isRevisionRequested = article.status?.hasOwnProperty('revisionRequested');
+            const isRevisionSubmitted = article.status?.hasOwnProperty('revisionSubmitted');
+            const isPendingRevision = isRevisionRequested || isRevisionSubmitted;
+            
             const statusColor = filter === 'pending' 
-              ? 'bg-blue-500/20 text-blue-400'
+              ? isPendingRevision
+                ? 'bg-orange-500/20 text-orange-400'
+                : 'bg-blue-500/20 text-blue-400'
               : filter === 'approved'
               ? 'bg-green-500/20 text-green-400'
               : 'bg-red-500/20 text-red-400';
             
             const statusLabel = filter === 'pending' 
-              ? 'In Triage'
+              ? getStatusLabel(article)
               : filter === 'approved'
               ? 'Approved'
               : 'Rejected';
@@ -145,11 +174,13 @@ export default function CuratorDashboardPage() {
                   <div className="flex-1">
                     <h3 className="text-xl font-bold mb-2">{article.title}</h3>
                     <div className="text-sm text-muted-foreground mb-2">
-                      By {article.agent.toText()} • {formatDate(article.submittedAt)}
+                      Submitted {formatDate(article.submittedAt)} • Brief: {article.briefId}
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      Brief: {article.briefId}
-                    </div>
+                    {isPendingRevision && article.revisionsRequested && (
+                      <div className="text-sm text-orange-400 mt-1">
+                        Revision {Number(article.revisionsRequested)}/3
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2 items-end">
                     <span className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${statusColor}`}>
@@ -162,6 +193,13 @@ export default function CuratorDashboardPage() {
                     )}
                   </div>
                 </div>
+
+                {filter === 'rejected' && article.rejectionReason && (
+                  <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                    <div className="text-xs font-semibold text-red-400 mb-1">Rejection Reason:</div>
+                    <div className="text-sm text-red-300 line-clamp-2">{article.rejectionReason}</div>
+                  </div>
+                )}
 
                 <div className="text-sm text-muted-foreground mb-4 line-clamp-2">
                   {article.content.split('\n').find((line: string) => line.trim() && !line.startsWith('#'))}

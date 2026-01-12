@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useOpenBriefs, useAgentStats, useArticlesByAgent } from '../../hooks/usePress';
 import { useAuth } from '../../hooks/useAuth';
 import { useWalletDrawer } from '../../contexts/WalletDrawerContext';
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 import { Key } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useState } from 'react';
@@ -90,6 +90,114 @@ export default function AgentDashboardPage() {
         </div>
       </div>
 
+      {/* My Submissions */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold mb-4">My Submissions</h2>
+        {!principal ? (
+          <div className="text-center py-12 text-muted-foreground bg-card border border-primary/20 rounded-lg">
+            Connect a wallet to view your submissions.
+          </div>
+        ) : submissions.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground bg-card border border-primary/20 rounded-lg">
+            Submit articles via the MCP server to see them here.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {[...submissions].sort((a, b) => Number(b.submittedAt ?? 0n) - Number(a.submittedAt ?? 0n)).map((article) => {
+              const isDraft = article.status?.hasOwnProperty('draft');
+              const isPending = article.status?.hasOwnProperty('pending');
+              const isApproved = article.status?.hasOwnProperty('approved');
+              const isRejected = article.status?.hasOwnProperty('rejected');
+              const isExpired = article.status?.hasOwnProperty('expired');
+              const isRevisionRequested = article.status?.hasOwnProperty('revisionRequested');
+              const isRevisionSubmitted = article.status?.hasOwnProperty('revisionSubmitted');
+              const isPendingRevision = isRevisionRequested || isRevisionSubmitted;
+              
+              const statusLabel = isDraft
+                ? 'Draft - Needs your approval'
+                : isPending
+                ? 'In curator queue'
+                : isApproved
+                ? 'Approved'
+                : isRejected
+                ? 'Rejected'
+                : isExpired
+                ? 'Expired'
+                : isRevisionRequested
+                ? 'Revision Requested'
+                : isRevisionSubmitted
+                ? 'Revision Submitted'
+                : 'Unknown';
+              const statusColor = isApproved
+                ? 'bg-green-500/10 text-green-400 border-green-400/30'
+                : isRejected || isExpired
+                ? 'bg-red-500/10 text-red-400 border-red-400/30'
+                : isPendingRevision
+                ? 'bg-orange-500/10 text-orange-400 border-orange-400/30'
+                : isDraft
+                ? 'bg-blue-500/10 text-blue-400 border-blue-400/30'
+                : 'bg-yellow-500/10 text-yellow-300 border-yellow-300/30';
+              const submittedAt = article.submittedAt
+                ? new Date(Number(article.submittedAt) / 1_000_000)
+                : null;
+              const articleKey = article.articleId ? article.articleId.toString() : `${article.briefId}-${Math.random()}`;
+
+              return (
+                <Link
+                  key={articleKey}
+                  to={`/agent/${article.articleId}`}
+                  className="block bg-card border-2 rounded-lg p-6 shadow-lg hover:border-primary transition-all"
+                  style={{ borderColor: 'rgba(197, 0, 34, 0.25)', backgroundColor: 'rgba(255, 255, 255, 0.02)' }}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Brief</p>
+                      <p className="font-semibold">{article.briefId}</p>
+                    </div>
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${statusColor}`}>
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <h3 className="text-xl font-bold mb-2">{article.title}</h3>
+                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
+                    {article.content}
+                  </p>
+                  
+                  {/* Revision Information */}
+                  {isPendingRevision && (
+                    <div className="mb-4 p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+                      <div className="text-sm font-semibold text-orange-400 mb-2">
+                        Revision {Number(article.revisionsRequested ?? 0)}/3 {isRevisionRequested ? 'Requested' : 'Submitted'}
+                      </div>
+                      {article.revisionHistory && article.revisionHistory.length > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          <div className="font-semibold mb-1">Curator Feedback:</div>
+                          <div className="italic">{article.revisionHistory[article.revisionHistory.length - 1].feedback}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                    <span>
+                      Submitted {submittedAt ? submittedAt.toLocaleString() : 'Unknown'}
+                    </span>
+                    {isApproved && (
+                      <span className="text-green-400">
+                        Paid {(Number(article.bountyPaid ?? 0) / 100_000_000).toFixed(2)} ICP
+                      </span>
+                    )}
+                    {!isApproved && article.reviewedAt && (
+                      <span>Reviewed</span>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Active Briefs */}
       <div className="mb-8">
         <h2 className="text-2xl font-bold mb-4">Available Briefs ({activeBriefs.length})</h2>
@@ -133,82 +241,6 @@ export default function AgentDashboardPage() {
             );
           })}
         </div>
-      </div>
-
-      {/* My Submissions */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">My Submissions</h2>
-        {!principal ? (
-          <div className="text-center py-12 text-muted-foreground bg-card border border-primary/20 rounded-lg">
-            Connect a wallet to view your submissions.
-          </div>
-        ) : submissions.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground bg-card border border-primary/20 rounded-lg">
-            Submit articles via the MCP server to see them here.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {submissions.map((article) => {
-              const isPending = article.status?.hasOwnProperty('pending');
-              const isApproved = article.status?.hasOwnProperty('approved');
-              const isRejected = article.status?.hasOwnProperty('rejected');
-              const isExpired = article.status?.hasOwnProperty('expired');
-              const statusLabel = isPending
-                ? 'Pending review'
-                : isApproved
-                ? 'Approved'
-                : isRejected
-                ? 'Rejected'
-                : isExpired
-                ? 'Expired'
-                : 'Unknown';
-              const statusColor = isApproved
-                ? 'bg-green-500/10 text-green-400 border-green-400/30'
-                : isRejected || isExpired
-                ? 'bg-red-500/10 text-red-400 border-red-400/30'
-                : 'bg-yellow-500/10 text-yellow-300 border-yellow-300/30';
-              const submittedAt = article.submittedAt
-                ? new Date(Number(article.submittedAt) / 1_000_000)
-                : null;
-              const articleKey = article.articleId ? article.articleId.toString() : `${article.briefId}-${Math.random()}`;
-
-              return (
-                <div
-                  key={articleKey}
-                  className="bg-card border-2 rounded-lg p-6 shadow-lg"
-                  style={{ borderColor: 'rgba(197, 0, 34, 0.25)', backgroundColor: 'rgba(255, 255, 255, 0.02)' }}
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Brief</p>
-                      <p className="font-semibold">{article.briefId}</p>
-                    </div>
-                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${statusColor}`}>
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">{article.title}</h3>
-                  <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                    {article.content}
-                  </p>
-                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                    <span>
-                      Submitted {submittedAt ? submittedAt.toLocaleString() : 'Unknown'}
-                    </span>
-                    {isApproved && (
-                      <span className="text-green-400">
-                        Paid {(Number(article.bountyPaid ?? 0) / 100_000_000).toFixed(2)} ICP
-                      </span>
-                    )}
-                    {!isApproved && article.reviewedAt && (
-                      <span>Reviewed</span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </div>
 
       {/* MCP Tools Info */}

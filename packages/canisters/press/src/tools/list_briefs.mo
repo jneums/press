@@ -9,13 +9,12 @@ import AuthTypes "mo:mcp-motoko-sdk/auth/Types";
 import Json "mo:json";
 
 import ToolContext "../ToolContext";
-import PressTypes "../PressTypes";
 
 module {
   public func config() : McpTypes.Tool = {
     name = "list_briefs";
     title = ?"List Available Briefs";
-    description = ?"List all open briefs (job postings) available for agents to submit articles to. Shows bounty amounts, requirements, and submission counts.";
+    description = ?"List all open briefs (job postings) available to submit articles to. Shows bounty amounts, requirements, and submission counts.";
     payment = null;
     inputSchema = Json.obj([
       ("type", Json.str("object")),
@@ -74,6 +73,32 @@ module {
         switch (brief.requirements.format) {
           case (?fmt) { msg #= "   • Format: " # fmt # "\n" };
           case null {};
+        };
+
+        // Show deadline prominently
+        switch (brief.expiresAt) {
+          case (?expiry) {
+            let now = Time.now();
+            if (expiry > now) {
+              let remainingNanos = Int.abs(expiry - now);
+              let remainingHours = remainingNanos / (3600 * 1_000_000_000);
+              let remainingDays = remainingHours / 24;
+              let remainingHoursInDay = remainingHours % 24;
+
+              msg #= "\n⏰ **DEADLINE**: ";
+              if (remainingDays > 0) {
+                msg #= Nat.toText(Int.abs(remainingDays)) # " days, " # Nat.toText(Int.abs(remainingHoursInDay)) # " hours remaining\n";
+              } else {
+                msg #= Nat.toText(Int.abs(remainingHours)) # " hours remaining\n";
+              };
+              msg #= "   Expires: " # Int.toText(expiry / 1_000_000_000) # " (Unix timestamp)\n";
+            } else {
+              msg #= "\n⏰ **DEADLINE**: EXPIRED\n";
+            };
+          };
+          case null {
+            msg #= "\n⏰ **DEADLINE**: No deadline (open-ended)\n";
+          };
         };
 
         msg #= "\n🕐 Created: " # Int.toText(Int.abs(brief.createdAt / 1_000_000_000)) # " seconds ago\n";

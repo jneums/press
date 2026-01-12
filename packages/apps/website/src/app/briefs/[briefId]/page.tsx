@@ -1,10 +1,13 @@
 import { useParams, Link } from 'react-router-dom';
 import { useBrief, useArticlesByBrief } from '../../../hooks/usePress';
+import { useAuth } from '../../../hooks/useAuth';
+import { EditBriefDialog } from '../../../components/EditBriefDialog';
 
 export default function BriefDetailsPage() {
   const { briefId } = useParams();
   const { data: brief, isLoading, error } = useBrief(briefId);
   const { data: articles = [], isLoading: articlesLoading, error: articlesError } = useArticlesByBrief(briefId);
+  const { getPrincipal, isAuthenticated } = useAuth();
 
   console.log('[Brief Page] briefId:', briefId);
   console.log('[Brief Page] articles:', articles);
@@ -43,8 +46,45 @@ export default function BriefDetailsPage() {
     });
   };
 
+  const formatDeadline = (expiresAt: bigint | undefined | null) => {
+    if (!expiresAt) return null;
+    const now = Date.now() * 1_000_000; // Current time in nanos
+    const expiryNanos = Number(expiresAt);
+    const remainingMs = (expiryNanos - now) / 1_000_000;
+    
+    if (remainingMs <= 0) return { text: 'EXPIRED', urgent: true, expired: true };
+    
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingDays = Math.floor(remainingHours / 24);
+    const hoursInDay = remainingHours % 24;
+    
+    const expiryDate = new Date(expiryNanos / 1_000_000);
+    const dateStr = expiryDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    
+    if (remainingDays > 7) {
+      return { text: dateStr, urgent: false, expired: false };
+    } else if (remainingDays > 0) {
+      return { text: `${remainingDays}d ${hoursInDay}h left (${dateStr})`, urgent: remainingDays <= 2, expired: false };
+    } else {
+      return { text: `${remainingHours}h left!`, urgent: true, expired: false };
+    }
+  };
+
   const slotsAvailable = Number(brief.maxArticles) - Number(brief.approvedCount);
   const isActive = brief.status?.hasOwnProperty('open') || false;
+
+  // Check if current user is the curator of this brief
+  const userPrincipal = getPrincipal();
+  const curatorText = typeof brief.curator === 'string' 
+    ? brief.curator 
+    : brief.curator?.toText?.() || brief.curator?.toString?.() || '';
+  const isCurator = isAuthenticated && userPrincipal && curatorText === userPrincipal;
 
   const formatTimestamp = (nanos?: bigint | null) => {
     if (!nanos) return 'Unknown';
@@ -85,15 +125,20 @@ export default function BriefDetailsPage() {
               {brief.topic}
             </span>
           </div>
-          {isActive ? (
-            <span className="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold border border-green-500/30">
-              Active
-            </span>
-          ) : (
-            <span className="px-4 py-2 bg-gray-500/20 text-gray-400 rounded-full text-sm font-semibold">
-              Closed
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {isCurator && isActive && (
+              <EditBriefDialog brief={brief} />
+            )}
+            {isActive ? (
+              <span className="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold border border-green-500/30">
+                Active
+              </span>
+            ) : (
+              <span className="px-4 py-2 bg-gray-500/20 text-gray-400 rounded-full text-sm font-semibold">
+                Closed
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
@@ -114,6 +159,44 @@ export default function BriefDetailsPage() {
             <div className="text-xs text-muted-foreground uppercase tracking-wide">Approved</div>
           </div>
         </div>
+
+        {/* DEADLINE - Bold and prominent */}
+        {(() => {
+          const deadline = formatDeadline(brief.expiresAt?.[0]);
+          return (
+            <div 
+              className={`mb-8 p-6 rounded-lg border-2 flex items-center gap-4 ${
+                deadline?.expired 
+                  ? 'bg-red-900/30 border-red-500' 
+                  : deadline?.urgent 
+                    ? 'bg-orange-900/30 border-orange-500 animate-pulse' 
+                    : deadline 
+                      ? 'bg-yellow-900/20 border-yellow-500/50' 
+                      : 'bg-green-900/20 border-green-500/30'
+              }`}
+            >
+              <span className="text-4xl">⏰</span>
+              <div>
+                <div className={`text-sm uppercase tracking-wide font-bold ${
+                  deadline?.expired ? 'text-red-400' : deadline?.urgent ? 'text-orange-400' : 'text-yellow-400'
+                }`}>
+                  SUBMISSION DEADLINE
+                </div>
+                <div className={`text-2xl font-bold ${
+                  deadline?.expired 
+                    ? 'text-red-400' 
+                    : deadline?.urgent 
+                      ? 'text-orange-400' 
+                      : deadline 
+                        ? 'text-yellow-300' 
+                        : 'text-green-400'
+                }`}>
+                  {deadline ? deadline.text : 'No deadline (open-ended)'}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="mb-6">
           <h3 className="font-semibold mb-2">Description</h3>

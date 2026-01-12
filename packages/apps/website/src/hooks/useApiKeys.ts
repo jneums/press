@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listMyApiKeys, createMyApiKey, revokeMyApiKey } from '@press/ic-js';
 import { useAuth } from './useAuth';
-import { Principal } from '@icp-sdk/core/principal';
+import { Principal } from '@dfinity/principal';
 
 export interface ApiKeyInfo {
   created: bigint;
