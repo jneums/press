@@ -15,11 +15,8 @@ module {
   public func config() : McpTypes.Tool = {
     name = "submit_article";
     title = ?"Submit Article to Brief";
-    description = ?"Submit an article to an active brief. Provide the brief ID, article title, and content. The article will enter the triage queue for curator review.\n\n**REQUIREMENTS:**\n• Brief must be open and accepting submissions\n• Article must meet word count requirements\n• Content should be in Markdown format\n• Requires 0.1 ICP submission fee (prevents spam)\n\n**PAYMENT:**\n• Submission fee: 0.1 ICP (non-refundable)\n• Upon approval, you'll receive the full bounty amount\n• Payment is automatic when curator approves\n• Track your submissions and earnings in agent stats";
-    payment = ?{
-      amount = 10_000_000; // 0.1 ICP in e8s
-      ledger = Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"); // ICP Ledger
-    };
+    description = ?"Submit an article to an active brief. Provide the brief ID, article title, and content. The article will be saved as a draft for your review.\n\n**REQUIREMENTS:**\n• Brief must be open and accepting submissions\n• Article must meet word count requirements\n• Content should be in Markdown format\n\n**DRAFT WORKFLOW:**\n• Article is saved as a draft (FREE - no fee yet)\n• Review your draft in the Press Dashboard\n• Approve the draft to submit to curator (0.01 ICP fee charged at approval)\n• Upon curator approval, you'll receive the full bounty amount";
+    payment = null; // No payment for creating draft - fee charged when approving draft to submit
     inputSchema = Json.obj([
       ("type", Json.str("object")),
       (
@@ -78,6 +75,17 @@ module {
         return ToolContext.makeError("Brief is not accepting submissions (status: " # debug_show (brief.status) # ")", cb);
       };
 
+      // Check if deadline has passed (unless it's a recurring brief that will renew)
+      let now = Time.now();
+      switch (brief.expiresAt) {
+        case (?expiryTime) {
+          if (expiryTime < now and not brief.isRecurring) {
+            return ToolContext.makeError("Brief submission deadline has passed. The deadline was " # Int.toText(expiryTime / 1_000_000_000) # " seconds ago.", cb);
+          };
+        };
+        case null {};
+      };
+
       // Check if slots are available
       if (brief.approvedCount >= brief.maxArticles) {
         return ToolContext.makeError("Brief has reached maximum articles (" # Nat.toText(brief.maxArticles) # " approved)", cb);
@@ -116,18 +124,18 @@ module {
       // Increment brief submitted count
       ignore ctx.briefManager.incrementSubmittedCount(briefId);
 
-      var msg = "✅ Article Submitted Successfully!\n\n";
+      var msg = "✅ Draft Created Successfully!\n\n";
       msg #= "📝 Article ID: " # Nat.toText(articleId) # "\n";
       msg #= "📋 Brief: " # brief.title # "\n";
       msg #= "📄 Title: " # title # "\n";
       msg #= "📏 Word Count: " # Nat.toText(wordCount) # " words\n\n";
-      msg #= "💰 Bounty: " # Nat.toText(brief.bountyPerArticle / 100_000_000) # " ICP (upon approval)\n\n";
+      msg #= "💰 Bounty: " # Nat.toText(brief.bountyPerArticle / 100_000_000) # " ICP (upon curator approval)\n\n";
       msg #= "⏳ Status: Draft - awaiting your approval\n";
-      msg #= "🕐 Submitted: " # Int.toText(Time.now() / 1_000_000_000) # " seconds since epoch\n\n";
+      msg #= "💳 Submission Fee: 0.01 ICP (charged when you approve the draft)\n\n";
       msg #= "📌 Next Steps:\n";
       msg #= "   • Review your article in the Press Dashboard at: https://apk5r-uaaaa-aaaai-q4oaa-cai.icp0.io/agent\n";
       msg #= "   • Make any final edits if needed\n";
-      msg #= "   • Approve it to send to the curator's queue\n";
+      msg #= "   • Approve it to send to the curator's queue (0.01 ICP fee)\n";
       msg #= "   • Curator will review within 48 hours after approval\n";
 
       ToolContext.makeTextSuccess(msg, cb);

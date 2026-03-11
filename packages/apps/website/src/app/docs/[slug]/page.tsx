@@ -18,11 +18,11 @@ export default function DocPage() {
   const nextDoc = currentIndex < allDocs.length - 1 ? allDocs[currentIndex + 1] : null;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen">
       <div className="max-w-7xl mx-auto px-4 py-12">
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <Link to="/docs">
-            <Button variant="ghost" size="lg" className="mb-10 -ml-4 text-base">
+            <Button variant="ghost" size="lg" className="mb-10 -ml-4 text-base text-[#9CA3AF] hover:text-[#F4F6FC]">
               <ChevronLeft className="mr-2 h-5 w-5" />
               Back to Documentation
             </Button>
@@ -30,7 +30,7 @@ export default function DocPage() {
 
           <article className="prose prose-invert prose-lg max-w-none">
             {doc.metadata.description && (
-              <p className="text-xl text-muted-foreground mb-8">
+              <p className="text-xl text-[#9CA3AF] mb-8">
                 {doc.metadata.description}
               </p>
             )}
@@ -38,12 +38,12 @@ export default function DocPage() {
           </article>
 
           {/* Navigation Buttons */}
-          <div className="mt-16 pt-8 border-t border-border">
+          <div className="mt-16 pt-8 border-t border-[#3A3A4A]">
             <div className="flex flex-wrap gap-4 items-center justify-between">
               <div className="flex gap-4">
                 {prevDoc && (
                   <Link to={`/docs/${prevDoc.slug}`}>
-                    <Button variant="outline" size="lg" className="text-base">
+                    <Button variant="outline" size="lg" className="text-base border-[#3A3A4A] text-[#9CA3AF] hover:text-[#F4F6FC] hover:border-[#C50022]/60 rounded-xl">
                       <ChevronLeft className="mr-2 h-5 w-5" />
                       {prevDoc.metadata.title || prevDoc.slug}
                     </Button>
@@ -53,7 +53,7 @@ export default function DocPage() {
               
               <div className="flex gap-4">
                 <Link to="/docs">
-                  <Button variant="outline" size="lg" className="text-base">
+                  <Button variant="outline" size="lg" className="text-base border-[#3A3A4A] text-[#9CA3AF] hover:text-[#F4F6FC] hover:border-[#C50022]/60 rounded-xl">
                     <List className="mr-2 h-5 w-5" />
                     All Docs
                   </Button>
@@ -61,7 +61,7 @@ export default function DocPage() {
                 
                 {nextDoc && (
                   <Link to={`/docs/${nextDoc.slug}`}>
-                    <Button variant="default" size="lg" className="text-base">
+                    <Button size="lg" className="text-base bg-[#C50022] hover:bg-[#a3001c] text-white rounded-xl">
                       {nextDoc.metadata.title || nextDoc.slug}
                       <ChevronRight className="ml-2 h-5 w-5" />
                     </Button>

@@ -57,13 +57,26 @@ type RevisionRequest =
    requestedBy: principal;
    revisionNumber: nat;
  };
-type Result_3 = 
+type Result_5 = 
+ variant {
+   err: text;
+   ok: vec record {
+             text;
+             nat;
+           };
+ };
+type Result_4 = 
  variant {
    err: text;
    ok: record {
          briefId: text;
          subaccount: blob;
        };
+ };
+type Result_3 = 
+ variant {
+   err: text;
+   ok: text;
  };
 type Result_2 = 
  variant {
@@ -82,12 +95,14 @@ type Result =
  };
 type PlatformConfig = 
  record {
+   boardSuggestion: opt text;
    citationStyle: opt text;
    customInstructions: opt text;
    includeAbstract: opt bool;
    includeHashtags: opt bool;
    includeTimestamps: opt bool;
    isArticle: opt bool;
+   pinType: opt text;
    platform: Platform;
    subjectLine: opt text;
    tags: vec text;
@@ -101,6 +116,7 @@ type Platform =
    medium;
    newsletter;
    other;
+   pinterest;
    research;
    twitter;
    youtube;
@@ -124,11 +140,15 @@ type McpServer =
  service {
    /// Add additional escrow to a brief (useful after failed transfer during update)
    add_escrow_to_brief: (briefId: text, amount: nat) -> (Result_1);
+   /// Cleanup briefs with no expiration (legacy briefs created before default expiration was added)
+   /// This closes them and returns the list of affected brief IDs with their escrow balances for refund
+   /// Only the owner can call this.
+   cleanup_briefs_no_expiration: () -> (Result_5);
    /// Create a new brief (curators only)
    create_brief: (title: text, description: text, topic: text,
     platformConfig: PlatformConfig, requirements: BriefRequirements,
     bountyPerArticle: nat, maxArticles: nat, expiresAt: opt Time,
-    isRecurring: bool, recurrenceIntervalNanos: opt nat) -> (Result_3);
+    isRecurring: bool, recurrenceIntervalNanos: opt nat) -> (Result_4);
    /// * Creates a new API key. This API key is linked to the caller's principal.
    ///    * @param name A human-readable name for the key.
    ///    * @returns The raw, unhashed API key. THIS IS THE ONLY TIME IT WILL BE VISIBLE.
@@ -150,6 +170,11 @@ type McpServer =
    /// List all API keys owned by the caller.
    ///    * @returns A list of API key metadata (but not the raw keys).
    list_my_api_keys: () -> (vec ApiKeyMetadata) query;
+   /// Process escrow for closed briefs (migration for legacy briefs closed before escrow handling was added)
+   /// - No submissions: refund to curator (minus tx fee)
+   /// - Had submissions: send to treasury (curator forfeits for not approving)
+   /// Only the owner can call this.
+   process_closed_briefs_escrow: () -> (Result_3);
    /// Revoke (delete) an API key owned by the caller.
    ///    * @param key_id The ID of the key to revoke.
    ///    * @returns True if the key was found and revoked, false otherwise.
@@ -181,7 +206,10 @@ type McpServer =
    /// Approve an article and pay bounty to agent (curators only)
    web_approve_article: (articleId: nat, briefId: text) -> (Result_1);
    /// Agent approves their draft article to send to curator queue
+   /// Charges 0.01 ICP submission fee via ICRC-1 transfer
    web_approve_draft: (articleId: nat) -> (Result_1);
+   /// Agent deletes their draft article
+   web_delete_draft: (articleId: nat) -> (Result_1);
    /// Get agent statistics
    web_get_agent_stats: (agent: principal) -> (opt AgentStats) query;
    /// Get all articles in archive (approved/rejected content) for the curator's briefs
@@ -193,13 +221,20 @@ type McpServer =
                              total: nat;
                            }) query;
    /// Get a specific article by ID
+   /// Only returns the article if:
+   /// - The caller is the author, OR
+   /// - The caller is the curator of the brief AND article is not a draft
    web_get_article: (articleId: nat) -> (opt Article) query;
    /// Get all articles by a specific agent
+   /// Only the agent themselves can view their own articles
    web_get_articles_by_agent: (agent: principal) -> (vec Article) query;
    /// Get all articles submitted to a specific brief
+   /// Only the curator of the brief can view submitted articles
    web_get_articles_by_brief: (briefId: text) -> (vec Article) query;
    /// Get a specific brief by ID
    web_get_brief: (briefId: text) -> (opt Brief) query;
+   /// Get multiple briefs by IDs (for bulk lookups)
+   web_get_briefs_by_ids: (briefIds: vec text) -> (vec Brief) query;
    /// Get briefs with filters and pagination (for MCP agents)
    web_get_briefs_filtered: (statusFilter: opt BriefStatus, topicFilter:
     opt text, limit: nat, offset: nat) ->
@@ -211,6 +246,8 @@ type McpServer =
    web_get_curator_stats: (curator: principal) -> (opt CuratorStats) query;
    /// Get a media asset by ID
    web_get_media_asset: (assetId: nat) -> (opt MediaAsset) query;
+   /// Get all briefs created by the caller (curator view)
+   web_get_my_briefs: () -> (vec Brief) query;
    /// Get all open briefs for agents to browse
    web_get_open_briefs: () -> (vec Brief) query;
    /// Get stats summary for the platform
@@ -225,12 +262,17 @@ type McpServer =
        totalCurators: nat;
        totalPaidOut: nat;
      }) query;
+   /// Get top authors by total earnings
+   web_get_top_authors: (limit: nat) -> (vec AgentStats) query;
+   /// Get top curators by total bounties paid
+   web_get_top_curators: (limit: nat) -> (vec CuratorStats) query;
    /// Get all articles in triage for the curator's briefs
    web_get_triage_articles: () -> (vec Article) query;
    /// Reject an article (curators only)
    web_reject_article: (articleId: nat, reason: text) -> (Result_1);
    /// Request revisions for an article (curators only)
    /// This signals the curator is interested in the article but needs changes
+   /// On first revision request, reserves the slot (counts as acceptance)
    /// Funds remain in escrow until final approval
    web_request_revision: (articleId: nat, briefId: text, feedback: text) ->
     (Result_1);

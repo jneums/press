@@ -29,6 +29,7 @@ module {
     #newsletter; // Email newsletters
     #youtube; // YouTube video scripts
     #research; // Research articles/papers
+    #pinterest; // Pinterest - visual pins and idea pins
     #other; // Custom/other platforms
   };
 
@@ -50,6 +51,9 @@ module {
     // Research specific
     citationStyle : ?Text; // e.g., "APA", "MLA", "Chicago"
     includeAbstract : ?Bool;
+    // Pinterest specific
+    pinType : ?Text; // "standard", "idea", "video" - type of pin
+    boardSuggestion : ?Text; // Suggested board category
     // Other
     customInstructions : ?Text; // Any custom platform instructions
   };

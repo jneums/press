@@ -9,38 +9,42 @@ export default function Navigation() {
   
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
-    return pathname.startsWith(path);
+    // Only exact match for main sections, not sub-pages
+    if (path === '/briefs') return pathname === '/briefs';
+    if (path === '/agent') return pathname === '/agent' || pathname.startsWith('/agent/');
+    if (path === '/curator') return pathname === '/curator' || pathname.startsWith('/curator/');
+    if (path === '/docs') return pathname === '/docs' || pathname.startsWith('/docs/');
+    return pathname === path;
   };
   
   const linkClass = (path: string) => {
-    const base = "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300";
+    const base = "px-4 py-2 rounded-full text-sm font-semibold transition-all duration-300 relative";
     if (isActive(path)) {
-      return `${base} text-white shadow-lg`
-        .concat(' ', 'bg-[#C50022]');
+      return `${base} text-white bg-primary shadow-lg shadow-primary/30`;
     }
-    return `${base} text-foreground hover:bg-white/5`;
+    return `${base} text-[#F4F6FC] hover:text-primary hover:bg-white/5`;
   };
   
   const mobileLinkClass = (path: string) => {
     const base = "block px-4 py-3 text-base font-semibold transition-all border-l-4 rounded-r-lg";
     if (isActive(path)) {
-      return `${base} text-white bg-[#C50022] border-[#C50022]`;
+      return `${base} text-white bg-primary border-primary`;
     }
-    return `${base} text-muted-foreground hover:text-foreground hover:bg-white/5 border-transparent`;
+    return `${base} text-[#9CA3AF] hover:text-[#F4F6FC] hover:bg-white/5 border-transparent`;
   };
   
   return (
     <>
       {/* Floating Navigation */}
       <header className="fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[95%] max-w-6xl">
-        <div className="backdrop-blur-xl border-2 rounded-full shadow-2xl px-8" style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', borderColor: 'rgba(197, 0, 34, 0.4)', boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(197, 0, 34, 0.3), 0 0 10px rgba(197, 0, 34, 0.5)' }}>
+        <div className="backdrop-blur-xl bg-[#181A20]/80 border border-[#3A3A4A] rounded-full shadow-2xl px-8">
           <div className="flex h-16 items-center justify-between">
             <Link 
               to="/" 
               className="flex flex-col items-center transition-colors group"
             >
-              <span className="text-2xl tracking-tight font-bold" style={{ color: '#C50022' }}>press</span>
-              <div className="w-8 h-0.5 mt-0.5 transition-all" style={{ background: '#C50022' }}></div>
+              <span className="text-2xl tracking-tight font-bold text-primary">press</span>
+              <div className="w-8 h-0.5 mt-0.5 transition-all bg-primary"></div>
             </Link>
             
             {/* Desktop Navigation */}
@@ -63,7 +67,7 @@ export default function Navigation() {
             {/* Mobile Hamburger Button */}
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="md:hidden p-2 text-foreground hover:text-[#C50022] transition-colors rounded-full hover:bg-white/5"
+              className="md:hidden p-2 text-[#F4F6FC] hover:text-primary transition-colors rounded-full hover:bg-white/5"
               aria-label="Toggle menu"
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,8 +96,8 @@ export default function Navigation() {
           
           {/* Mobile Drawer with Frosted Glass */}
           <div className="fixed top-24 right-4 w-72 z-50 md:hidden">
-            <div className="bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="p-3 border-b border-white/10">
+            <div className="bg-[#181A20]/95 backdrop-blur-xl border border-[#3A3A4A] rounded-2xl shadow-2xl overflow-hidden">
+              <div className="p-3 border-b border-[#3A3A4A]">
                 <WalletButton />
               </div>
               <nav className="flex flex-col p-2">

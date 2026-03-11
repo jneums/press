@@ -130,6 +130,14 @@ export async function getOpenBriefs(agent: any): Promise<any[]> {
 }
 
 /**
+ * Get all briefs created by the current user (curator view)
+ */
+export async function getMyBriefs(agent: any): Promise<any[]> {
+  const actor = await getPressActor(agent);
+  return await actor.web_get_my_briefs();
+}
+
+/**
  * Get a specific brief by ID
  */
 export async function getBrief(agent: any, briefId: string): Promise<any> {
@@ -137,6 +145,14 @@ export async function getBrief(agent: any, briefId: string): Promise<any> {
   const result = await actor.web_get_brief(briefId);
   // Backend returns optional, unwrap it
   return result && result.length > 0 ? result[0] : null;
+}
+
+/**
+ * Get multiple briefs by IDs (for bulk lookups)
+ */
+export async function getBriefsByIds(agent: any, briefIds: string[]): Promise<any[]> {
+  const actor = await getPressActor(agent);
+  return await actor.web_get_briefs_by_ids(briefIds);
 }
 
 /**
@@ -204,6 +220,22 @@ export async function getCuratorStats(agent: any, principal: any): Promise<any> 
 }
 
 /**
+ * Get top curators by total bounties paid
+ */
+export async function getTopCurators(agent: any, limit: number = 5): Promise<any[]> {
+  const actor = await getPressActor(agent);
+  return await actor.web_get_top_curators(BigInt(limit));
+}
+
+/**
+ * Get top authors by total earnings
+ */
+export async function getTopAuthors(agent: any, limit: number = 5): Promise<any[]> {
+  const actor = await getPressActor(agent);
+  return await actor.web_get_top_authors(BigInt(limit));
+}
+
+/**
  * Get media asset by ID
  */
 export async function getMediaAsset(agent: any, assetId: bigint): Promise<any> {
@@ -242,6 +274,8 @@ interface PlatformConfig {
   subjectLine: string[];
   citationStyle: string[];
   includeAbstract: boolean[];
+  pinType: string[];
+  boardSuggestion: string[];
   customInstructions: string[];
 }
 

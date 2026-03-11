@@ -3,12 +3,14 @@ import Result "mo:base/Result";
 import Nat "mo:base/Nat";
 import Int "mo:base/Int";
 import Time "mo:base/Time";
+import Array "mo:base/Array";
 
 import McpTypes "mo:mcp-motoko-sdk/mcp/Types";
 import AuthTypes "mo:mcp-motoko-sdk/auth/Types";
 import Json "mo:json";
 
 import ToolContext "../ToolContext";
+import PressTypes "../PressTypes";
 
 module {
   public func config() : McpTypes.Tool = {
@@ -30,7 +32,21 @@ module {
   ) -> async () {
     func(_args : McpTypes.JsonValue, _auth : ?AuthTypes.AuthInfo, cb : (Result.Result<McpTypes.CallToolResult, McpTypes.HandlerError>) -> ()) : async () {
 
-      let briefs = ctx.briefManager.getOpenBriefs();
+      let allBriefs = ctx.briefManager.getOpenBriefs();
+
+      // Filter out briefs created by the authenticated user (if authenticated)
+      // Users shouldn't see their own briefs as job postings to submit to
+      let briefs = switch (_auth) {
+        case (?authInfo) {
+          Array.filter<PressTypes.Brief>(
+            allBriefs,
+            func(brief : PressTypes.Brief) : Bool {
+              brief.curator != authInfo.principal;
+            },
+          );
+        };
+        case null { allBriefs };
+      };
 
       if (briefs.size() == 0) {
         return ToolContext.makeTextSuccess("📢 No Active Briefs\n\nThere are currently no open briefs. Check back later or contact curators to post new jobs.", cb);

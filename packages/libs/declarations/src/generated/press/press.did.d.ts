@@ -128,6 +128,7 @@ export interface HttpResponse {
 }
 export interface McpServer {
   'add_escrow_to_brief' : ActorMethod<[string, bigint], Result_1>,
+  'cleanup_briefs_no_expiration' : ActorMethod<[], Result_5>,
   'create_brief' : ActorMethod<
     [
       string,
@@ -141,7 +142,7 @@ export interface McpServer {
       boolean,
       [] | [bigint],
     ],
-    Result_3
+    Result_4
   >,
   'create_my_api_key' : ActorMethod<[string, Array<string>], string>,
   'get_icp_ledger' : ActorMethod<[], [] | [Principal]>,
@@ -155,6 +156,7 @@ export interface McpServer {
   'http_request_update' : ActorMethod<[HttpRequest], HttpResponse>,
   'icrc120_upgrade_finished' : ActorMethod<[], UpgradeFinishedResult>,
   'list_my_api_keys' : ActorMethod<[], Array<ApiKeyMetadata>>,
+  'process_closed_briefs_escrow' : ActorMethod<[], Result_3>,
   'revoke_my_api_key' : ActorMethod<[string], undefined>,
   'run_janitor_now' : ActorMethod<[], string>,
   'set_icp_ledger' : ActorMethod<[Principal], Result_1>,
@@ -167,6 +169,7 @@ export interface McpServer {
   'update_brief' : ActorMethod<[string, BriefUpdateRequest], Result_1>,
   'web_approve_article' : ActorMethod<[bigint, string], Result_1>,
   'web_approve_draft' : ActorMethod<[bigint], Result_1>,
+  'web_delete_draft' : ActorMethod<[bigint], Result_1>,
   'web_get_agent_stats' : ActorMethod<[Principal], [] | [AgentStats]>,
   'web_get_archived_articles' : ActorMethod<
     [bigint, bigint, [] | [ArticleStatus]],
@@ -176,12 +179,14 @@ export interface McpServer {
   'web_get_articles_by_agent' : ActorMethod<[Principal], Array<Article>>,
   'web_get_articles_by_brief' : ActorMethod<[string], Array<Article>>,
   'web_get_brief' : ActorMethod<[string], [] | [Brief]>,
+  'web_get_briefs_by_ids' : ActorMethod<[Array<string>], Array<Brief>>,
   'web_get_briefs_filtered' : ActorMethod<
     [[] | [BriefStatus], [] | [string], bigint, bigint],
     { 'total' : bigint, 'briefs' : Array<Brief> }
   >,
   'web_get_curator_stats' : ActorMethod<[Principal], [] | [CuratorStats]>,
   'web_get_media_asset' : ActorMethod<[bigint], [] | [MediaAsset]>,
+  'web_get_my_briefs' : ActorMethod<[], Array<Brief>>,
   'web_get_open_briefs' : ActorMethod<[], Array<Brief>>,
   'web_get_platform_stats' : ActorMethod<
     [],
@@ -196,6 +201,8 @@ export interface McpServer {
       'totalBriefs' : bigint,
     }
   >,
+  'web_get_top_authors' : ActorMethod<[bigint], Array<AgentStats>>,
+  'web_get_top_curators' : ActorMethod<[bigint], Array<CuratorStats>>,
   'web_get_triage_articles' : ActorMethod<[], Array<Article>>,
   'web_reject_article' : ActorMethod<[bigint, string], Result_1>,
   'web_request_revision' : ActorMethod<[bigint, string, string], Result_1>,
@@ -220,6 +227,7 @@ export type Platform = { 'linkedin' : null } |
   { 'other' : null } |
   { 'blog' : null } |
   { 'research' : null } |
+  { 'pinterest' : null } |
   { 'youtube' : null } |
   { 'newsletter' : null } |
   { 'medium' : null };
@@ -234,7 +242,9 @@ export interface PlatformConfig {
   'isArticle' : [] | [boolean],
   'threadCount' : [] | [bigint],
   'includeHashtags' : [] | [boolean],
+  'pinType' : [] | [string],
   'includeTimestamps' : [] | [boolean],
+  'boardSuggestion' : [] | [string],
 }
 export type Result = { 'ok' : bigint } |
   { 'err' : TreasuryError };
@@ -242,9 +252,13 @@ export type Result_1 = { 'ok' : null } |
   { 'err' : string };
 export type Result_2 = { 'ok' : null } |
   { 'err' : TreasuryError };
-export type Result_3 = {
+export type Result_3 = { 'ok' : string } |
+  { 'err' : string };
+export type Result_4 = {
     'ok' : { 'briefId' : string, 'subaccount' : Uint8Array | number[] }
   } |
+  { 'err' : string };
+export type Result_5 = { 'ok' : Array<[string, bigint]> } |
   { 'err' : string };
 export interface RevisionRequest {
   'feedback' : string,

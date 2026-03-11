@@ -102,7 +102,7 @@ module {
       for (article in filteredArticles.vals()) {
         msg #= "═══════════════════════════════════════\n";
         msg #= "📝 " # article.title # "\n";
-        msg #= "ID: " # Nat.toText(article.articleId) # " | Brief: " # article.briefId # "\n";
+        msg #= "Article ID: " # Nat.toText(article.articleId) # "\n";
 
         // Status with emoji
         let statusEmoji = switch (article.status) {
@@ -124,16 +124,21 @@ module {
           case (null) {};
         };
 
-        msg #= "👤 Agent: " # Principal.toText(article.agent) # "\n";
+        // Show bounty paid if approved
+        if (article.bountyPaid > 0) {
+          let paidWhole = article.bountyPaid / 100_000_000;
+          let paidDec = article.bountyPaid % 100_000_000;
+          msg #= "💰 Bounty Paid: " # Nat.toText(paidWhole) # "." # Nat.toText(paidDec / 10_000_000) # " ICP\n";
+        };
 
         // Show revision info if applicable
         if (article.revisionsRequested > 0) {
           msg #= "🔄 Revisions: " # Nat.toText(article.revisionsRequested) # " of 3\n";
-          msg #= "📊 Current Revision: " # Nat.toText(article.currentRevision) # "\n";
         };
 
         // Show submission time
         let now = Time.now();
+        let submittedDate = article.submittedAt / 1_000_000_000;
         let ageSeconds = Int.abs((now - article.submittedAt) / 1_000_000_000);
         let ageHours = ageSeconds / 3600;
         let ageMinutes = (ageSeconds % 3600) / 60;
@@ -144,54 +149,63 @@ module {
           msg #= "🕐 Submitted: " # Nat.toText(ageMinutes) # " minutes ago\n";
         };
 
-        // Show latest revision request if exists
-        if (article.revisionHistory.size() > 0) {
+        // Show expiry warning for drafts and pending articles
+        switch (ctx.articleManager.getArticleExpiryInfo(article.articleId)) {
+          case (?(hoursRemaining, shouldRemind)) {
+            let remainingHours = Int.abs(hoursRemaining);
+            if (shouldRemind) {
+              // Urgent warning
+              msg #= "⚠️ EXPIRES IN " # Nat.toText(remainingHours) # "h - Please take action soon!\n";
+            } else if (article.status == #draft) {
+              // Draft with time remaining
+              msg #= "⏱️ Draft expires in " # Nat.toText(remainingHours) # "h (72h limit)\n";
+            } else if (article.status == #pending or article.status == #revisionSubmitted) {
+              // Pending with time remaining
+              msg #= "⏱️ Review window: " # Nat.toText(remainingHours) # "h remaining (48h limit)\n";
+            };
+          };
+          case (null) {};
+        };
+
+        // Show reviewed time if available
+        switch (article.reviewedAt) {
+          case (?reviewedAt) {
+            let reviewedAgeSeconds = Int.abs((now - reviewedAt) / 1_000_000_000);
+            let reviewedAgeHours = reviewedAgeSeconds / 3600;
+            let reviewedAgeMinutes = (reviewedAgeSeconds % 3600) / 60;
+
+            if (reviewedAgeHours > 0) {
+              msg #= "✓ Reviewed: " # Nat.toText(reviewedAgeHours) # "h " # Nat.toText(reviewedAgeMinutes) # "m ago\n";
+            } else {
+              msg #= "✓ Reviewed: " # Nat.toText(reviewedAgeMinutes) # " minutes ago\n";
+            };
+          };
+          case (null) {};
+        };
+
+        // Show latest revision feedback if exists (but not who requested it for privacy)
+        if (article.revisionHistory.size() > 0 and (article.status == #revisionRequested or article.status == #revisionSubmitted)) {
           let latestRevision = article.revisionHistory[article.revisionHistory.size() - 1];
           msg #= "\n💬 Latest Feedback:\n";
           msg #= "   " # latestRevision.feedback # "\n";
-          msg #= "   Requested by: " # Principal.toText(latestRevision.requestedBy) # "\n";
-
-          let revAgeSeconds = Int.abs((now - latestRevision.requestedAt) / 1_000_000_000);
-          let revAgeHours = revAgeSeconds / 3600;
-          let revAgeMinutes = (revAgeSeconds % 3600) / 60;
-
-          if (revAgeHours > 0) {
-            msg #= "   " # Nat.toText(revAgeHours) # "h " # Nat.toText(revAgeMinutes) # "m ago\n";
-          } else {
-            msg #= "   " # Nat.toText(revAgeMinutes) # " minutes ago\n";
-          };
         };
 
-        // Show content preview
-        let contentPreview = if (Text.size(article.content) > 200) {
-          let chars = Text.toIter(article.content);
-          var preview = "";
-          var count = 0;
-          label l for (char in chars) {
-            if (count >= 200) break l;
-            preview #= Text.fromChar(char);
-            count += 1;
-          };
-          preview # "...";
-        } else {
-          article.content;
-        };
-        msg #= "\n📄 Content Preview:\n" # contentPreview # "\n\n";
+        msg #= "\n";
       };
 
       // Add helpful instructions based on what's shown
       if (filteredArticles.size() > 0) {
         msg #= "═══════════════════════════════════════\n";
-        msg #= "ℹ️  Instructions:\n";
+        msg #= "ℹ️  Next Steps:\n";
 
         let hasDrafts = Array.filter<PressTypes.Article>(filteredArticles, func(a) { a.status == #draft }).size() > 0;
         let hasRevisionRequests = Array.filter<PressTypes.Article>(filteredArticles, func(a) { a.status == #revisionRequested }).size() > 0;
 
         if (hasDrafts) {
-          msg #= "• Draft articles need to be approved before curators can review them\n";
+          msg #= "• Use edit_draft to modify your draft, then the system will auto-submit\n";
         };
         if (hasRevisionRequests) {
-          msg #= "• Revision-requested articles need updated content submitted by the agent\n";
+          msg #= "• Use submit_revision with article ID to submit updated content\n";
         };
       };
 

@@ -1,9 +1,14 @@
 import { Link } from 'react-router-dom';
 import { useOpenBriefs } from '../../hooks/usePress';
+import { useAuth } from '../../hooks/useAuth';
 import { CreateBriefDialog } from '../../components/CreateBriefDialog';
+import { RefreshCw } from 'lucide-react';
 
 export default function BriefsPage() {
-  const { data: briefs = [], isLoading, error } = useOpenBriefs();
+  const { data: briefs = [], isLoading, error, refetch, isFetching } = useOpenBriefs();
+  const { user, isAuthenticated } = useAuth();
+  
+  // Filter briefs: show all but mark the user's own briefs
   const activeBriefs = briefs.filter(b => b.status.hasOwnProperty('open'));
   const completedBriefs = briefs.filter(b => !b.status.hasOwnProperty('open'));
 
@@ -37,13 +42,20 @@ export default function BriefsPage() {
     });
   };
 
-  const formatDeadline = (expiresAt: bigint | undefined) => {
+  const formatDeadline = (expiresAt: bigint | undefined, isRecurring?: boolean, recurrenceIntervalNanos?: bigint | null) => {
     if (!expiresAt) return null;
     const now = Date.now() * 1_000_000; // Current time in nanos
     const expiryNanos = Number(expiresAt);
     const remainingMs = (expiryNanos - now) / 1_000_000;
     
-    if (remainingMs <= 0) return { text: 'EXPIRED', urgent: true, expired: true };
+    if (remainingMs <= 0) {
+      // For recurring briefs, show "Renewing soon" instead of expired
+      if (isRecurring && recurrenceIntervalNanos) {
+        const intervalDays = Math.floor(Number(recurrenceIntervalNanos) / (24 * 60 * 60 * 1_000_000_000));
+        return { text: `Renewing (${intervalDays}d cycle)`, urgent: false, expired: false, renewing: true };
+      }
+      return { text: 'EXPIRED', urgent: true, expired: true };
+    }
     
     const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
     const remainingDays = Math.floor(remainingHours / 24);
@@ -70,23 +82,32 @@ export default function BriefsPage() {
   const BriefCard = ({ brief }: { brief: any }) => {
     const acceptanceRate = 0; // TODO: Calculate from curator stats
     const slotsAvailable = Number(brief.maxArticles) - Number(brief.approvedCount);
-    const deadline = formatDeadline(brief.expiresAt?.[0]);
+    const deadline = formatDeadline(brief.expiresAt?.[0], brief.isRecurring, brief.recurrenceIntervalNanos?.[0]);
+    
+    // Check if this brief belongs to the current user
+    const isOwnBrief = isAuthenticated && user && brief.curator?.toText?.() === user.principal;
 
     return (
       <Link 
         to={`/briefs/${brief.briefId}`}
-        className="block bg-card border-2 rounded-lg p-8 hover:border-primary transition-all shadow-lg hover:shadow-xl"
-        style={{ borderColor: 'rgba(197, 0, 34, 0.4)', backgroundColor: 'rgba(255, 255, 255, 0.02)', boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(197, 0, 34, 0.2), inset 0 0 30px rgba(197, 0, 34, 0.05)' }}
+        className={`block bg-[#1F1F24] border rounded-xl p-8 hover:border-primary/60 transition-all duration-300 hover:shadow-lg hover:shadow-primary/10 ${isOwnBrief ? 'border-blue-500/40' : 'border-[#3A3A4A]'}`}
       >
         <div className="flex justify-between items-start gap-4 mb-6">
           <div className="flex-1 min-w-0">
-            <h3 className="text-2xl font-bold mb-2">{brief.title}</h3>
+            <div className="flex items-center gap-3 mb-2">
+              <h3 className="text-2xl font-bold">{brief.title}</h3>
+              {isOwnBrief && (
+                <span className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-semibold border border-blue-500/30 whitespace-nowrap">
+                  Your Brief
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2 mb-2">
-              <span className="px-3 py-1 rounded text-xs font-semibold border whitespace-nowrap" style={{ backgroundColor: 'rgba(197, 0, 34, 0.1)', color: '#C50022', borderColor: 'rgba(197, 0, 34, 0.3)' }}>
+              <span className="px-3 py-1 rounded text-xs font-semibold border border-primary/30 bg-primary/10 text-primary whitespace-nowrap">
                 {brief.topic}
               </span>
             </div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-[#9CA3AF]">
               Posted {formatDate(brief.createdAt)}
             </div>
           </div>
@@ -99,61 +120,61 @@ export default function BriefsPage() {
 
         {/* DEADLINE - Bold and prominent */}
         <div 
-          className={`mb-6 p-4 rounded-lg border-2 flex items-center gap-3 ${
+          className={`mb-6 p-4 rounded-xl border flex items-center gap-3 ${
             deadline?.expired 
-              ? 'bg-red-900/30 border-red-500' 
-              : deadline?.urgent 
-                ? 'bg-orange-900/30 border-orange-500 animate-pulse' 
-                : deadline 
-                  ? 'bg-yellow-900/20 border-yellow-500/50' 
-                  : 'bg-green-900/20 border-green-500/30'
+              ? 'bg-red-500/10 border-red-500/40' 
+              : deadline?.renewing
+                ? 'bg-blue-500/10 border-blue-500/40'
+                : deadline?.urgent 
+                  ? 'bg-orange-500/10 border-orange-500/40' 
+                  : deadline 
+                    ? 'bg-yellow-500/10 border-yellow-500/30' 
+                    : 'bg-green-500/10 border-green-500/30'
           }`}
         >
-          <span className="text-2xl">⏰</span>
+          <span className="text-2xl">{deadline?.renewing ? '🔄' : '⏰'}</span>
           <div>
             <div className={`text-xs uppercase tracking-wide font-bold ${
-              deadline?.expired ? 'text-red-400' : deadline?.urgent ? 'text-orange-400' : 'text-yellow-400'
+              deadline?.expired ? 'text-red-400' : deadline?.renewing ? 'text-blue-400' : deadline?.urgent ? 'text-orange-400' : 'text-yellow-400'
             }`}>
-              SUBMISSION DEADLINE
+              {deadline?.renewing ? 'RECURRING BRIEF' : 'SUBMISSION DEADLINE'}
             </div>
             <div className={`text-lg font-bold ${
               deadline?.expired 
                 ? 'text-red-400' 
-                : deadline?.urgent 
-                  ? 'text-orange-400' 
-                  : deadline 
-                    ? 'text-yellow-300' 
-                    : 'text-green-400'
+                : deadline?.renewing
+                  ? 'text-blue-400'
+                  : deadline?.urgent 
+                    ? 'text-orange-400' 
+                    : deadline 
+                      ? 'text-yellow-300' 
+                      : 'text-green-400'
             }`}>
               {deadline ? deadline.text : 'No deadline (open-ended)'}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-6">
-          <div className="bg-black/30 rounded-lg p-4 border" style={{ borderColor: 'rgba(197, 0, 34, 0.2)' }}>
-            <div className="text-3xl font-bold mb-1" style={{ color: '#C50022' }}>{Number(brief.bountyPerArticle) / 100_000_000} ICP</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Per Article</div>
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="bg-[#181A20] rounded-xl p-4 border border-[#3A3A4A]">
+            <div className="text-2xl font-bold mb-1 text-primary">{Number(brief.bountyPerArticle) / 100_000_000} ICP</div>
+            <div className="text-xs text-[#9CA3AF] uppercase tracking-wide">Per Article</div>
           </div>
-          <div className="bg-black/30 rounded-lg p-4 border" style={{ borderColor: 'rgba(197, 0, 34, 0.2)' }}>
-            <div className="text-3xl font-bold mb-1" style={{ color: '#C50022' }}>{Number(brief.escrowBalance) / 100_000_000} ICP</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Escrow Balance</div>
+          <div className="bg-[#181A20] rounded-xl p-4 border border-[#3A3A4A]">
+            <div className="text-2xl font-bold mb-1 text-[#F4F6FC]">{Number(brief.approvedCount)}</div>
+            <div className="text-xs text-[#9CA3AF] uppercase tracking-wide">Approved</div>
           </div>
-          <div className="bg-black/30 rounded-lg p-4 border border-white/10">
-            <div className="text-3xl font-bold mb-1 text-white">{Number(brief.approvedCount)}</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Approved</div>
-          </div>
-          <div className="bg-black/30 rounded-lg p-4 border border-white/10">
-            <div className="text-3xl font-bold mb-1 text-white">{Number(brief.maxArticles)}</div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wide">Total Slots</div>
+          <div className="bg-[#181A20] rounded-xl p-4 border border-[#3A3A4A]">
+            <div className="text-2xl font-bold mb-1 text-[#F4F6FC]">{Number(brief.maxArticles)}</div>
+            <div className="text-xs text-[#9CA3AF] uppercase tracking-wide">Total Slots</div>
           </div>
         </div>
 
-        <div className="border-t pt-6 space-y-4" style={{ borderColor: 'rgba(197, 0, 34, 0.2)' }}>
+        <div className="border-t border-[#3A3A4A] pt-6 space-y-4">
           {(brief.requirements.minWords || brief.requirements.maxWords) && (
             <div className="flex items-start gap-3">
-              <span className="text-sm text-muted-foreground min-w-[120px]">Word Count:</span>
-              <span className="font-semibold text-white">
+              <span className="text-sm text-[#9CA3AF] min-w-[120px]">Word Count:</span>
+              <span className="font-semibold text-[#F4F6FC]">
                 {brief.requirements.minWords && brief.requirements.maxWords
                   ? `${Number(brief.requirements.minWords)} - ${Number(brief.requirements.maxWords)} words`
                   : brief.requirements.minWords
@@ -164,13 +185,12 @@ export default function BriefsPage() {
           )}
           {brief.requirements.requiredTopics && brief.requirements.requiredTopics.length > 0 && (
             <div className="flex items-start gap-3">
-              <span className="text-sm text-muted-foreground min-w-[120px]">Topics:</span>
+              <span className="text-sm text-[#9CA3AF] min-w-[120px]">Topics:</span>
               <div className="flex flex-wrap gap-2">
                 {brief.requirements.requiredTopics.map((topic: string, idx: number) => (
                   <span 
                     key={idx}
-                    className="px-3 py-1 rounded text-xs font-mono border"
-                    style={{ backgroundColor: 'rgba(197, 0, 34, 0.1)', color: '#C50022', borderColor: 'rgba(197, 0, 34, 0.3)' }}
+                    className="px-3 py-1 rounded text-xs font-mono border border-primary/30 bg-primary/10 text-primary"
                   >
                     {topic}
                   </span>
@@ -184,14 +204,22 @@ export default function BriefsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-12">
+    <div className="max-w-7xl mx-auto px-4 py-12 text-[#F4F6FC]">
       <div className="mb-12 text-center">
         <div className="flex items-center justify-center gap-4 mb-4">
-          <h1 className="text-5xl font-bold" style={{ color: '#C50022' }}>Active Briefs</h1>
+          <h1 className="text-5xl font-bold text-primary">Active Briefs</h1>
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="p-2 rounded-xl bg-[#1F1F24] border border-[#3A3A4A] hover:border-primary/60 transition-all disabled:opacity-50"
+            title="Refresh briefs"
+          >
+            <RefreshCw className={`w-5 h-5 ${isFetching ? 'animate-spin' : ''}`} />
+          </button>
           <CreateBriefDialog />
         </div>
-        <div className="w-16 h-1 mx-auto mb-6" style={{ background: '#C50022' }}></div>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+        <div className="w-16 h-1 mx-auto mb-6 bg-primary"></div>
+        <p className="text-lg text-[#9CA3AF] max-w-2xl mx-auto">
           Browse available content bounties and start creating articles
         </p>
       </div>
@@ -203,7 +231,7 @@ export default function BriefsPage() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-12 text-muted-foreground">
+        <div className="text-center py-12 text-[#9CA3AF]">
           No active briefs at the moment
         </div>
       )}
@@ -211,8 +239,8 @@ export default function BriefsPage() {
       {completedBriefs.length > 0 && (
         <>
           <div className="mb-8 mt-16">
-            <h2 className="text-3xl font-bold mb-2">Completed Briefs</h2>
-            <p className="text-muted-foreground">
+            <h2 className="text-3xl font-bold mb-2 text-[#F4F6FC]">Completed Briefs</h2>
+            <p className="text-[#9CA3AF]">
               Past bounties that have been fulfilled
             </p>
           </div>

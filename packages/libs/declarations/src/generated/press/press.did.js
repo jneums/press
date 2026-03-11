@@ -1,11 +1,16 @@
 export const idlFactory = ({ IDL }) => {
   const Result_1 = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
+  const Result_5 = IDL.Variant({
+    'ok' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Nat)),
+    'err' : IDL.Text,
+  });
   const Platform = IDL.Variant({
     'linkedin' : IDL.Null,
     'twitter' : IDL.Null,
     'other' : IDL.Null,
     'blog' : IDL.Null,
     'research' : IDL.Null,
+    'pinterest' : IDL.Null,
     'youtube' : IDL.Null,
     'newsletter' : IDL.Null,
     'medium' : IDL.Null,
@@ -21,7 +26,9 @@ export const idlFactory = ({ IDL }) => {
     'isArticle' : IDL.Opt(IDL.Bool),
     'threadCount' : IDL.Opt(IDL.Nat),
     'includeHashtags' : IDL.Opt(IDL.Bool),
+    'pinType' : IDL.Opt(IDL.Text),
     'includeTimestamps' : IDL.Opt(IDL.Bool),
+    'boardSuggestion' : IDL.Opt(IDL.Text),
   });
   const BriefRequirements = IDL.Record({
     'maxWords' : IDL.Opt(IDL.Nat),
@@ -30,7 +37,7 @@ export const idlFactory = ({ IDL }) => {
     'format' : IDL.Opt(IDL.Text),
   });
   const Time = IDL.Int;
-  const Result_3 = IDL.Variant({
+  const Result_4 = IDL.Variant({
     'ok' : IDL.Record({
       'briefId' : IDL.Text,
       'subaccount' : IDL.Vec(IDL.Nat8),
@@ -84,6 +91,7 @@ export const idlFactory = ({ IDL }) => {
     'info' : ApiKeyInfo,
     'hashed_key' : HashedApiKey,
   });
+  const Result_3 = IDL.Variant({ 'ok' : IDL.Text, 'err' : IDL.Text });
   const Timestamp = IDL.Nat64;
   const TransferError = IDL.Variant({
     'GenericError' : IDL.Record({
@@ -229,6 +237,7 @@ export const idlFactory = ({ IDL }) => {
   const Result = IDL.Variant({ 'ok' : IDL.Nat, 'err' : TreasuryError });
   const McpServer = IDL.Service({
     'add_escrow_to_brief' : IDL.Func([IDL.Text, IDL.Nat], [Result_1], []),
+    'cleanup_briefs_no_expiration' : IDL.Func([], [Result_5], []),
     'create_brief' : IDL.Func(
         [
           IDL.Text,
@@ -242,7 +251,7 @@ export const idlFactory = ({ IDL }) => {
           IDL.Bool,
           IDL.Opt(IDL.Nat),
         ],
-        [Result_3],
+        [Result_4],
         [],
       ),
     'create_my_api_key' : IDL.Func(
@@ -262,6 +271,7 @@ export const idlFactory = ({ IDL }) => {
     'http_request_update' : IDL.Func([HttpRequest], [HttpResponse], []),
     'icrc120_upgrade_finished' : IDL.Func([], [UpgradeFinishedResult], []),
     'list_my_api_keys' : IDL.Func([], [IDL.Vec(ApiKeyMetadata)], ['query']),
+    'process_closed_briefs_escrow' : IDL.Func([], [Result_3], []),
     'revoke_my_api_key' : IDL.Func([IDL.Text], [], []),
     'run_janitor_now' : IDL.Func([], [IDL.Text], []),
     'set_icp_ledger' : IDL.Func([IDL.Principal], [Result_1], []),
@@ -280,6 +290,7 @@ export const idlFactory = ({ IDL }) => {
     'update_brief' : IDL.Func([IDL.Text, BriefUpdateRequest], [Result_1], []),
     'web_approve_article' : IDL.Func([IDL.Nat, IDL.Text], [Result_1], []),
     'web_approve_draft' : IDL.Func([IDL.Nat], [Result_1], []),
+    'web_delete_draft' : IDL.Func([IDL.Nat], [Result_1], []),
     'web_get_agent_stats' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(AgentStats)],
@@ -302,6 +313,11 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'web_get_brief' : IDL.Func([IDL.Text], [IDL.Opt(Brief)], ['query']),
+    'web_get_briefs_by_ids' : IDL.Func(
+        [IDL.Vec(IDL.Text)],
+        [IDL.Vec(Brief)],
+        ['query'],
+      ),
     'web_get_briefs_filtered' : IDL.Func(
         [IDL.Opt(BriefStatus), IDL.Opt(IDL.Text), IDL.Nat, IDL.Nat],
         [IDL.Record({ 'total' : IDL.Nat, 'briefs' : IDL.Vec(Brief) })],
@@ -317,6 +333,7 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(MediaAsset)],
         ['query'],
       ),
+    'web_get_my_briefs' : IDL.Func([], [IDL.Vec(Brief)], ['query']),
     'web_get_open_briefs' : IDL.Func([], [IDL.Vec(Brief)], ['query']),
     'web_get_platform_stats' : IDL.Func(
         [],
@@ -332,6 +349,16 @@ export const idlFactory = ({ IDL }) => {
             'totalBriefs' : IDL.Nat,
           }),
         ],
+        ['query'],
+      ),
+    'web_get_top_authors' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(AgentStats)],
+        ['query'],
+      ),
+    'web_get_top_curators' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(CuratorStats)],
         ['query'],
       ),
     'web_get_triage_articles' : IDL.Func([], [IDL.Vec(Article)], ['query']),

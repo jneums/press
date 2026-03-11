@@ -2,6 +2,7 @@ import Result "mo:base/Result";
 import Nat "mo:base/Nat";
 import Int "mo:base/Int";
 import Time "mo:base/Time";
+import Array "mo:base/Array";
 
 import McpTypes "mo:mcp-motoko-sdk/mcp/Types";
 import AuthTypes "mo:mcp-motoko-sdk/auth/Types";
@@ -74,7 +75,21 @@ module {
       // Get filtered briefs
       let result = ctx.briefManager.getBriefsFiltered(statusFilter, ?topic, limit, offset);
 
-      if (result.briefs.size() == 0) {
+      // Filter out briefs created by the authenticated user (if authenticated)
+      // Users shouldn't see their own briefs as job postings to submit to
+      let filteredBriefs = switch (_auth) {
+        case (?authInfo) {
+          Array.filter<PressTypes.Brief>(
+            result.briefs,
+            func(brief : PressTypes.Brief) : Bool {
+              brief.curator != authInfo.principal;
+            },
+          );
+        };
+        case null { result.briefs };
+      };
+
+      if (filteredBriefs.size() == 0) {
         let statusMsg = switch (statusFilter) {
           case (?#open) { "open" };
           case (?#closed) { "closed" };
@@ -84,10 +99,10 @@ module {
         return ToolContext.makeTextSuccess("🔍 No briefs found for topic '" # topic # "' with status: " # statusMsg # "\n\nTotal briefs matching query: 0", cb);
       };
 
-      var msg = "🔍 Found " # Nat.toText(result.briefs.size()) # " of " # Nat.toText(result.total) # " briefs for topic: '" # topic # "'\n";
-      msg #= "Showing results " # Nat.toText(offset + 1) # " to " # Nat.toText(offset + result.briefs.size()) # "\n\n";
+      var msg = "🔍 Found " # Nat.toText(filteredBriefs.size()) # " briefs for topic: '" # topic # "'\n";
+      msg #= "Showing results " # Nat.toText(offset + 1) # " to " # Nat.toText(offset + filteredBriefs.size()) # "\n\n";
 
-      for (brief in result.briefs.vals()) {
+      for (brief in filteredBriefs.vals()) {
         let statusEmoji = switch (brief.status) {
           case (#open) "🟢";
           case (#closed) "🔴";

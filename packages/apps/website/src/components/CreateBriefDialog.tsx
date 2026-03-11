@@ -16,11 +16,11 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Checkbox } from './ui/checkbox';
-import { Plus, X, RefreshCw, Twitter, Linkedin, FileText, Mail, Youtube, BookOpen, Globe } from 'lucide-react';
+import { Plus, X, RefreshCw, Twitter, Linkedin, FileText, Mail, Youtube, BookOpen, Globe, Pin } from 'lucide-react';
 import { toast } from 'sonner';
 
 // Platform types matching backend
-type Platform = 'twitter' | 'linkedin' | 'medium' | 'blog' | 'newsletter' | 'youtube' | 'research' | 'other';
+type Platform = 'twitter' | 'linkedin' | 'medium' | 'blog' | 'newsletter' | 'youtube' | 'research' | 'pinterest' | 'other';
 
 interface PlatformInfo {
   id: Platform;
@@ -92,6 +92,14 @@ const platforms: PlatformInfo[] = [
     defaultMaxWords: 10000,
   },
   {
+    id: 'pinterest',
+    name: 'Pinterest',
+    icon: <Pin className="h-5 w-5" />,
+    description: 'Visual pins, idea pins, and board content',
+    defaultMinWords: 50,
+    defaultMaxWords: 500,
+  },
+  {
     id: 'other',
     name: 'Other',
     icon: <FileText className="h-5 w-5" />,
@@ -101,10 +109,57 @@ const platforms: PlatformInfo[] = [
   },
 ];
 
+// Template suggestions for additional instructions
+interface InstructionTemplate {
+  label: string;
+  text: string;
+  platforms?: Platform[];
+}
+
+const instructionTemplates: InstructionTemplate[] = [
+  {
+    label: 'Tone: Professional',
+    text: 'Write in a professional, authoritative tone. Avoid slang and casual language.',
+  },
+  {
+    label: 'Tone: Casual',
+    text: 'Use a conversational, friendly tone. Feel free to use contractions and casual language.',
+  },
+  {
+    label: 'SEO Focus',
+    text: 'Optimize for search engines. Include relevant keywords naturally throughout the content.',
+    platforms: ['blog', 'medium'],
+  },
+  {
+    label: 'Call to Action',
+    text: 'Include a clear call-to-action at the end of the content.',
+  },
+  {
+    label: 'Statistics Required',
+    text: 'Include relevant statistics and data points to support claims. Cite sources when possible.',
+    platforms: ['blog', 'medium', 'research', 'linkedin'],
+  },
+  {
+    label: 'Visual Description',
+    text: 'Include descriptions for accompanying visuals or suggest image placement.',
+    platforms: ['blog', 'pinterest', 'medium'],
+  },
+  {
+    label: 'Engagement Focused',
+    text: 'Optimize for engagement. Ask questions, use hooks, and encourage comments/shares.',
+    platforms: ['twitter', 'linkedin', 'youtube'],
+  },
+  {
+    label: 'How-to Format',
+    text: 'Structure as a step-by-step guide with numbered instructions.',
+    platforms: ['blog', 'medium', 'youtube', 'pinterest'],
+  },
+];
+
 const createBriefSchema = z.object({
   title: z.string().min(5, 'Title must be at least 5 characters').max(100, 'Title is too long'),
   topic: z.string().min(5, 'Topic must be at least 5 characters').max(200, 'Topic is too long'),
-  platform: z.enum(['twitter', 'linkedin', 'medium', 'blog', 'newsletter', 'youtube', 'research', 'other']),
+  platform: z.enum(['twitter', 'linkedin', 'medium', 'blog', 'newsletter', 'youtube', 'research', 'pinterest', 'other']),
   bountyPerArticle: z.number().min(0.1, 'Bounty must be at least 0.1 ICP'),
   maxArticles: z.number().int().min(1, 'Must allow at least 1 article').max(1000, 'Maximum 1000 articles'),
   minWords: z.number().int().min(1, 'Minimum 1 word').max(50000, 'Maximum 50000 words').or(z.nan()).optional(),
@@ -152,6 +207,7 @@ export function CreateBriefDialog() {
     reset,
     setValue,
     watch,
+    getValues,
   } = useForm<CreateBriefFormData>({
     resolver: zodResolver(createBriefSchema),
     defaultValues: {
@@ -239,14 +295,23 @@ export function CreateBriefDialog() {
         subjectLine: data.platform === 'newsletter' && data.subjectLine ? [data.subjectLine] : [],
         citationStyle: data.platform === 'research' && data.citationStyle ? [data.citationStyle] : [],
         includeAbstract: data.platform === 'research' ? [data.includeAbstract ?? true] : [],
+        pinType: [],
+        boardSuggestion: [],
         customInstructions: data.customInstructions ? [data.customInstructions] : [],
       };
 
       // Build description from platform-specific info
       const platformInfo = platforms.find(p => p.id === data.platform);
       let description = `Platform: ${platformInfo?.name}\n`;
+      
+      // Add custom instructions first (the main content description)
       if (data.customInstructions) {
-        description += `\nInstructions: ${data.customInstructions}`;
+        description += `\n${data.customInstructions}`;
+      }
+      
+      // Add hashtag instruction at the bottom after all other instructions
+      if (data.platform === 'twitter' && data.includeHashtags) {
+        description += `\n\n#️⃣ Include relevant hashtags`;
       }
 
       const result = await createBrief.mutateAsync({
@@ -571,6 +636,26 @@ export function CreateBriefDialog() {
               {/* Custom Instructions (always shown) */}
               <div>
                 <Label htmlFor="customInstructions">Additional Instructions (optional)</Label>
+                {/* Template suggestions */}
+                <div className="flex flex-wrap gap-1 mb-2 mt-1">
+                  {instructionTemplates
+                    .filter(t => !t.platforms || t.platforms.includes(currentPlatform as Platform))
+                    .map((template, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          const current = getValues('customInstructions') || '';
+                          const newValue = current ? `${current}\n${template.text}` : template.text;
+                          setValue('customInstructions', newValue);
+                        }}
+                        className="px-2 py-0.5 text-xs bg-white/5 border border-white/10 rounded hover:bg-white/10 transition-colors"
+                      >
+                        + {template.label}
+                      </button>
+                    ))
+                  }
+                </div>
                 <textarea
                   id="customInstructions"
                   {...register('customInstructions')}
@@ -687,6 +772,26 @@ export function CreateBriefDialog() {
                         The brief will automatically reset every {watch('recurrenceIntervalDays') || 'X'} days.
                       </p>
                     </div>
+                    
+                    {/* Recurring Cost Summary */}
+                    {watch('recurrenceIntervalDays') && watch('expiresInDays') && (
+                      <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                        <p className="text-sm text-blue-400">
+                          <strong>💰 Recurring Cost Estimate:</strong>
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Per cycle: <strong className="text-white">{bountyPerArticle * maxArticles} ICP</strong> ({maxArticles} articles × {bountyPerArticle} ICP)
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Number of cycles: <strong className="text-white">
+                            {Math.ceil((watch('expiresInDays') || 14) / (watch('recurrenceIntervalDays') || 1))}
+                          </strong> ({watch('expiresInDays')} days ÷ {watch('recurrenceIntervalDays')} day interval)
+                        </p>
+                        <p className="text-sm text-blue-300 mt-2 font-semibold">
+                          Total potential spend: {(bountyPerArticle * maxArticles * Math.ceil((watch('expiresInDays') || 14) / (watch('recurrenceIntervalDays') || 1))).toFixed(2)} ICP
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

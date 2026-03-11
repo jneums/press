@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getOpenBriefs,
+  getMyBriefs,
   getBrief,
   getTriageArticles,
   getArticle,
@@ -9,6 +10,8 @@ import {
   getArticlesByAgent,
   getArticlesByBrief,
   getCuratorStats,
+  getTopCurators,
+  getTopAuthors,
   getMediaAsset,
   getPlatformStats,
   createBrief,
@@ -37,6 +40,24 @@ export function useOpenBriefs() {
 }
 
 /**
+ * Hook to fetch briefs created by the current user
+ */
+export function useMyBriefs() {
+  const { getAgent, isAuthenticated } = useAuth();
+
+  return useQuery({
+    queryKey: ['press', 'briefs', 'my'],
+    queryFn: async () => {
+      const agent = getAgent();
+      if (!agent) throw new Error('Not authenticated');
+      return await getMyBriefs(agent);
+    },
+    enabled: isAuthenticated,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+}
+
+/**
  * Hook to fetch a specific brief by ID (public - works without authentication)
  */
 export function useBrief(briefId: string | undefined) {
@@ -49,6 +70,23 @@ export function useBrief(briefId: string | undefined) {
       return await getBrief(getAgent(), briefId);
     },
     enabled: !!briefId,
+  });
+}
+
+/**
+ * Hook to fetch multiple briefs by IDs (for bulk lookups)
+ */
+export function useBriefsByIds(briefIds: string[]) {
+  const { getAgent } = useAuth();
+
+  return useQuery({
+    queryKey: ['press', 'briefs', 'byIds', briefIds.sort().join(',')],
+    queryFn: async () => {
+      if (briefIds.length === 0) return [];
+      const { getBriefsByIds } = await import('@press/ic-js');
+      return await getBriefsByIds(getAgent(), briefIds);
+    },
+    enabled: briefIds.length > 0,
   });
 }
 
@@ -180,6 +218,36 @@ export function useCuratorStats(principal?: Principal) {
 }
 
 /**
+ * Hook to fetch top curators by total bounties paid (public - works without authentication)
+ */
+export function useTopCurators(limit: number = 5) {
+  const { getAgent } = useAuth();
+
+  return useQuery({
+    queryKey: ['press', 'stats', 'topCurators', limit],
+    queryFn: async () => {
+      return await getTopCurators(getAgent(), limit);
+    },
+    refetchInterval: 60000, // Refetch every minute
+  });
+}
+
+/**
+ * Hook to fetch top authors by total earnings (public - works without authentication)
+ */
+export function useTopAuthors(limit: number = 5) {
+  const { getAgent } = useAuth();
+
+  return useQuery({
+    queryKey: ['press', 'stats', 'topAuthors', limit],
+    queryFn: async () => {
+      return await getTopAuthors(getAgent(), limit);
+    },
+    refetchInterval: 60000, // Refetch every minute
+  });
+}
+
+/**
  * Hook to fetch media asset by ID
  */
 export function useMediaAsset(assetId: bigint | undefined) {
@@ -234,6 +302,8 @@ export function useCreateBrief() {
         subjectLine: string[];
         citationStyle: string[];
         includeAbstract: boolean[];
+        pinType: string[];
+        boardSuggestion: string[];
         customInstructions: string[];
       };
       requirements: {
@@ -288,6 +358,8 @@ export function useUpdateBrief() {
         subjectLine: string[];
         citationStyle: string[];
         includeAbstract: boolean[];
+        pinType: string[];
+        boardSuggestion: string[];
         customInstructions: string[];
       };
       requirements?: {

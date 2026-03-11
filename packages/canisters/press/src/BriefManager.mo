@@ -9,6 +9,8 @@ import Result "mo:base/Result";
 import Buffer "mo:base/Buffer";
 import Blob "mo:base/Blob";
 import Debug "mo:base/Debug";
+import Array "mo:base/Array";
+import Option "mo:base/Option";
 import Map "mo:map/Map";
 import { nhash; thash; phash } "mo:map/Map";
 import SHA256 "mo:sha2/Sha256";
@@ -132,6 +134,7 @@ module {
     };
 
     /// Renew a recurring brief (reset counts, update expiry)
+    /// Called AFTER escrow has been refilled from curator's allowance
     public func renewRecurringBrief(briefId : Text) : Result.Result<(), Text> {
       switch (Map.get(briefs, thash, briefId)) {
         case null { #err("Brief not found") };
@@ -146,36 +149,6 @@ module {
           };
 
           let now = Time.now();
-
-          // Calculate required escrow for new cycle
-          let requiredEscrow = brief.bountyPerArticle * brief.maxArticles;
-
-          // Check if enough escrow balance remains
-          if (brief.escrowBalance < requiredEscrow) {
-            // Not enough funds, close the brief
-            let closedBrief : Brief = {
-              briefId = brief.briefId;
-              curator = brief.curator;
-              title = brief.title;
-              description = brief.description;
-              topic = brief.topic;
-              platformConfig = brief.platformConfig;
-              requirements = brief.requirements;
-              bountyPerArticle = brief.bountyPerArticle;
-              maxArticles = brief.maxArticles;
-              submittedCount = brief.submittedCount;
-              approvedCount = brief.approvedCount;
-              status = #closed;
-              createdAt = brief.createdAt;
-              expiresAt = brief.expiresAt;
-              escrowSubaccount = brief.escrowSubaccount;
-              escrowBalance = brief.escrowBalance;
-              isRecurring = brief.isRecurring;
-              recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
-            };
-            ignore Map.put(briefs, thash, briefId, closedBrief);
-            return #err("Insufficient escrow for renewal, brief closed");
-          };
 
           // Renew the brief - reset counts and update expiry
           let renewedBrief : Brief = {
@@ -194,7 +167,7 @@ module {
             createdAt = brief.createdAt;
             expiresAt = ?(now + intervalNanos); // Set new expiry
             escrowSubaccount = brief.escrowSubaccount;
-            escrowBalance = brief.escrowBalance; // Keep existing balance
+            escrowBalance = brief.escrowBalance; // Keep existing balance (already refilled)
             isRecurring = brief.isRecurring;
             recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
           };
@@ -474,7 +447,7 @@ module {
                 curator = stats.curator;
                 briefsCreated = stats.briefsCreated;
                 articlesReviewed = stats.articlesReviewed;
-                articlesApproved = stats.articlesApproved;
+                articlesApproved = stats.articlesApproved + 1;
                 articlesRejected = stats.articlesRejected;
                 totalBountiesPaid = stats.totalBountiesPaid + bountyPaid;
                 totalEscrowed = newTotalEscrowed;
@@ -528,12 +501,56 @@ module {
       };
     };
 
-    /// Get all open briefs
+    /// Cleanup briefs with no expiration (pre-fix legacy briefs)
+    /// Sets them to closed status and returns list of affected brief IDs with their escrow balances
+    public func cleanupBriefsWithNoExpiration() : [(Text, Nat)] {
+      let affected = Buffer.Buffer<(Text, Nat)>(0);
+
+      for ((id, brief) in Map.entries(briefs)) {
+        // Only cleanup open briefs with null expiresAt
+        if (brief.status == #open and Option.isNull(brief.expiresAt)) {
+          let updated = {
+            briefId = brief.briefId;
+            curator = brief.curator;
+            title = brief.title;
+            description = brief.description;
+            topic = brief.topic;
+            platformConfig = brief.platformConfig;
+            requirements = brief.requirements;
+            bountyPerArticle = brief.bountyPerArticle;
+            maxArticles = brief.maxArticles;
+            submittedCount = brief.submittedCount;
+            approvedCount = brief.approvedCount;
+            status = #closed;
+            createdAt = brief.createdAt;
+            expiresAt = brief.expiresAt;
+            escrowSubaccount = brief.escrowSubaccount;
+            escrowBalance = brief.escrowBalance;
+            isRecurring = brief.isRecurring;
+            recurrenceIntervalNanos = brief.recurrenceIntervalNanos;
+          };
+          ignore Map.put(briefs, thash, id, updated);
+          affected.add((id, brief.escrowBalance));
+        };
+      };
+
+      Buffer.toArray(affected);
+    };
+
+    /// Get all open briefs (excludes expired non-recurring briefs)
     public func getOpenBriefs() : [Brief] {
       let buffer = Buffer.Buffer<Brief>(0);
+      let now = Time.now();
       for ((id, brief) in Map.entries(briefs)) {
         if (brief.status == #open) {
-          buffer.add(brief);
+          // Check if deadline has passed for non-recurring briefs
+          let isExpiredNonRecurring = switch (brief.expiresAt) {
+            case (?expiryTime) { expiryTime < now and not brief.isRecurring };
+            case null { false };
+          };
+          if (not isExpiredNonRecurring) {
+            buffer.add(brief);
+          };
         };
       };
       // Sort by createdAt in reverse chronological order (most recent first)
@@ -606,11 +623,48 @@ module {
       };
     };
 
+    /// Get all briefs created by a specific curator
+    public func getBriefsByCurator(curator : Principal) : [Brief] {
+      let buffer = Buffer.Buffer<Brief>(0);
+      for ((id, brief) in Map.entries(briefs)) {
+        if (Principal.equal(brief.curator, curator)) {
+          buffer.add(brief);
+        };
+      };
+      // Sort by createdAt in reverse chronological order (most recent first)
+      buffer.sort(
+        func(a : Brief, b : Brief) : { #less; #equal; #greater } {
+          if (a.createdAt > b.createdAt) { #less } else if (a.createdAt < b.createdAt) {
+            #greater;
+          } else { #equal };
+        }
+      );
+      Buffer.toArray(buffer);
+    };
+
     /// Get all expired recurring briefs that need renewal
     public func getExpiredRecurringBriefs(now : Time.Time) : [Text] {
       let buffer = Buffer.Buffer<Text>(0);
       for ((id, brief) in Map.entries(briefs)) {
         if (brief.status == #open and brief.isRecurring) {
+          switch (brief.expiresAt) {
+            case (?expiryTime) {
+              if (expiryTime <= now) {
+                buffer.add(id);
+              };
+            };
+            case null {};
+          };
+        };
+      };
+      Buffer.toArray(buffer);
+    };
+
+    /// Get all expired non-recurring briefs that should be closed
+    public func getExpiredNonRecurringBriefs(now : Time.Time) : [Text] {
+      let buffer = Buffer.Buffer<Text>(0);
+      for ((id, brief) in Map.entries(briefs)) {
+        if (brief.status == #open and not brief.isRecurring) {
           switch (brief.expiresAt) {
             case (?expiryTime) {
               if (expiryTime <= now) {
@@ -632,6 +686,42 @@ module {
     /// Get curator stats
     public func getCuratorStats(curator : Principal) : ?CuratorStats {
       Map.get(curatorStats, phash, curator);
+    };
+
+    /// Get top curators by total bounties paid
+    public func getTopCurators(limit : Nat) : [CuratorStats] {
+      let buffer = Buffer.Buffer<CuratorStats>(0);
+      for ((_, stats) in Map.entries(curatorStats)) {
+        buffer.add(stats);
+      };
+
+      // Sort by totalBountiesPaid descending
+      let allStats = Buffer.toArray(buffer);
+      let sorted = Array.sort<CuratorStats>(
+        allStats,
+        func(a, b) {
+          if (a.totalBountiesPaid > b.totalBountiesPaid) { #less } else if (a.totalBountiesPaid < b.totalBountiesPaid) {
+            #greater;
+          } else { #equal };
+        },
+      );
+
+      // Return top N
+      let actualLimit = if (sorted.size() < limit) { sorted.size() } else {
+        limit;
+      };
+      Array.tabulate<CuratorStats>(actualLimit, func(i) { sorted[i] });
+    };
+
+    /// Get all closed briefs that still have escrow balance (for migration)
+    public func getClosedBriefsWithEscrow() : [Brief] {
+      let buffer = Buffer.Buffer<Brief>(0);
+      for ((_, brief) in Map.entries(briefs)) {
+        if (brief.status == #closed and brief.escrowBalance > 0) {
+          buffer.add(brief);
+        };
+      };
+      Buffer.toArray(buffer);
     };
 
     /// Increment submitted count for a brief

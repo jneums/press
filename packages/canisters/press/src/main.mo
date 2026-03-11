@@ -11,6 +11,7 @@ import Array "mo:base/Array";
 import Iter "mo:base/Iter";
 import Buffer "mo:base/Buffer";
 import Error "mo:base/Error";
+import Float "mo:base/Float";
 
 import HttpTypes "mo:http-types";
 import Map "mo:map/Map";
@@ -35,6 +36,7 @@ import SrvTypes "mo:mcp-motoko-sdk/server/Types";
 
 import ClassPlus "mo:class-plus";
 import TT "mo:timer-tool";
+import Star "mo:star/star";
 
 // Import Press modules
 import PressTypes "./PressTypes";
@@ -51,7 +53,6 @@ import ViewPendingSubmissions "tools/view_pending_submissions";
 import EditDraft "tools/edit_draft";
 import SubmitRevision "tools/submit_revision";
 
-// Migration function to add platformConfig field to Brief type
 // (
 //   with migration = func(
 //     old_state : {
@@ -61,6 +62,19 @@ import SubmitRevision "tools/submit_revision";
 //         title : Text;
 //         description : Text;
 //         topic : Text;
+//         platformConfig : {
+//           platform : { #twitter; #linkedin; #medium; #blog; #newsletter; #youtube; #research; #other };
+//           includeHashtags : ?Bool;
+//           threadCount : ?Nat;
+//           isArticle : ?Bool;
+//           tags : [Text];
+//           includeTimestamps : ?Bool;
+//           targetDuration : ?Nat;
+//           subjectLine : ?Text;
+//           citationStyle : ?Text;
+//           includeAbstract : ?Bool;
+//           customInstructions : ?Text;
+//         };
 //         requirements : PressTypes.BriefRequirements;
 //         bountyPerArticle : Nat;
 //         maxArticles : Nat;
@@ -81,19 +95,31 @@ import SubmitRevision "tools/submit_revision";
 //     let new_briefs = Map.new<Text, PressTypes.Brief>();
 
 //     for ((briefId, oldBrief) in Map.entries(old_state.stable_briefs)) {
-//       // Create default platform config based on description/topic hints
-//       let defaultPlatformConfig : PressTypes.PlatformConfig = {
-//         platform = #other;
-//         includeHashtags = null;
-//         threadCount = null;
-//         isArticle = null;
-//         tags = [];
-//         includeTimestamps = null;
-//         targetDuration = null;
-//         subjectLine = null;
-//         citationStyle = null;
-//         includeAbstract = null;
-//         customInstructions = ?oldBrief.description; // Preserve old description as custom instructions
+//       let newPlatform : PressTypes.Platform = switch (oldBrief.platformConfig.platform) {
+//         case (#twitter) { #twitter };
+//         case (#linkedin) { #linkedin };
+//         case (#medium) { #medium };
+//         case (#blog) { #blog };
+//         case (#newsletter) { #newsletter };
+//         case (#youtube) { #youtube };
+//         case (#research) { #research };
+//         case (#other) { #other };
+//       };
+
+//       let newPlatformConfig : PressTypes.PlatformConfig = {
+//         platform = newPlatform;
+//         includeHashtags = oldBrief.platformConfig.includeHashtags;
+//         threadCount = oldBrief.platformConfig.threadCount;
+//         isArticle = oldBrief.platformConfig.isArticle;
+//         tags = oldBrief.platformConfig.tags;
+//         includeTimestamps = oldBrief.platformConfig.includeTimestamps;
+//         targetDuration = oldBrief.platformConfig.targetDuration;
+//         subjectLine = oldBrief.platformConfig.subjectLine;
+//         citationStyle = oldBrief.platformConfig.citationStyle;
+//         includeAbstract = oldBrief.platformConfig.includeAbstract;
+//         pinType = null;
+//         boardSuggestion = null;
+//         customInstructions = oldBrief.platformConfig.customInstructions;
 //       };
 
 //       let newBrief : PressTypes.Brief = {
@@ -102,7 +128,7 @@ import SubmitRevision "tools/submit_revision";
 //         title = oldBrief.title;
 //         description = oldBrief.description;
 //         topic = oldBrief.topic;
-//         platformConfig = defaultPlatformConfig;
+//         platformConfig = newPlatformConfig;
 //         requirements = oldBrief.requirements;
 //         bountyPerArticle = oldBrief.bountyPerArticle;
 //         maxArticles = oldBrief.maxArticles;
@@ -124,7 +150,6 @@ import SubmitRevision "tools/submit_revision";
 //     };
 //   }
 // )
-
 shared ({ caller = deployer }) persistent actor class McpServer(
   args : ?{
     owner : ?Principal;
@@ -226,19 +251,51 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   // Constants
   let JANITOR_INTERVAL_HOURS : Nat = 6; // Run janitor every 6 hours
   let ARTICLE_TTL_HOURS : Nat = 48; // Articles expire after 48 hours in triage
-  let SUBMISSION_FEE_E8S : Nat = 10_000_000; // 0.1 ICP submission fee to prevent spam
+  let SUBMISSION_FEE_E8S : Nat = 1_000_000; // 0.01 ICP submission fee to prevent spam
+  let AUTO_APPROVE_TIMEOUT : Nat = 60_000_000_000; // 60 seconds timeout for auto-approve actions
 
   // --- Janitor Timer Handler ---
-  // Purges expired articles from triage (>48h old) and renews recurring briefs
+  // Purges expired articles from triage (>48h old), auto-approves max-revision articles, renews recurring briefs, and closes expired non-recurring briefs
   func handleJanitorCleanup<system>(_actionId : TT.ActionId, _action : TT.Action) : TT.ActionId {
     Debug.print("[Janitor] Running triage cleanup...");
     let purgedCount = articleManager.purgeExpiredArticles();
     Debug.print("[Janitor] Purged " # Nat.toText(purgedCount) # " expired articles");
 
-    // Check and renew expired recurring briefs
-    Debug.print("[Janitor] Checking for recurring briefs to renew...");
-    let renewedCount = renewExpiredRecurringBriefs();
-    Debug.print("[Janitor] Renewed " # Nat.toText(renewedCount) # " recurring briefs");
+    // Schedule close expired briefs as async action (needs to do ICP transfers)
+    Debug.print("[Janitor] Scheduling expired briefs closure...");
+    let closeTime = Time.now() + 250_000_000; // 0.25 seconds from now
+    ignore tt().setActionASync<system>(
+      Int.abs(closeTime),
+      {
+        actionType = "close_expired_briefs";
+        params = to_candid (());
+      },
+      AUTO_APPROVE_TIMEOUT,
+    );
+
+    // Schedule recurring brief renewal as async action (needs to pull funds from allowance)
+    Debug.print("[Janitor] Scheduling recurring brief renewal...");
+    let renewTime = Time.now() + 500_000_000; // 0.5 seconds from now
+    ignore tt().setActionASync<system>(
+      Int.abs(renewTime),
+      {
+        actionType = "renew_recurring_briefs";
+        params = to_candid (());
+      },
+      AUTO_APPROVE_TIMEOUT,
+    );
+
+    // Schedule auto-approval as a separate async action (runs shortly after)
+    Debug.print("[Janitor] Scheduling auto-approval check...");
+    let autoApproveTime = Time.now() + 1_000_000_000; // 1 second from now
+    ignore tt().setActionASync<system>(
+      Int.abs(autoApproveTime),
+      {
+        actionType = "auto_approve_articles";
+        params = to_candid (());
+      },
+      AUTO_APPROVE_TIMEOUT,
+    );
 
     // Schedule next cleanup in 6 hours
     let now = Time.now();
@@ -255,24 +312,257 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     nextActionId;
   };
 
-  // Helper function to renew expired recurring briefs
-  func renewExpiredRecurringBriefs() : Nat {
+  /// Async timer handler for auto-approval of max-revision articles
+  /// Protects authors from malicious curators who never finalize after max revisions
+  func handleAutoApprove(actionId : TT.ActionId, _action : TT.Action) : async* Star.Star<TT.ActionId, TT.Error> {
     let now = Time.now();
-    let expiredBriefIds = briefManager.getExpiredRecurringBriefs(now);
-    var renewedCount = 0;
+    let articlesToAutoApprove = articleManager.getArticlesForAutoApproval(now);
 
-    for (briefId in expiredBriefIds.vals()) {
-      switch (briefManager.renewRecurringBrief(briefId)) {
-        case (#ok()) {
-          renewedCount += 1;
+    Debug.print("[AutoApprove] Found " # Nat.toText(articlesToAutoApprove.size()) # " articles for auto-approval");
+
+    for (article in articlesToAutoApprove.vals()) {
+      Debug.print("[AutoApprove] Processing article " # Nat.toText(article.articleId));
+
+      // Get the brief to find the bounty and curator
+      switch (briefManager.getBrief(article.briefId)) {
+        case (?brief) {
+          // Use the curator as the reviewer for auto-approval
+          let reviewer = switch (article.reviewer) {
+            case (?r) { r };
+            case null { brief.curator };
+          };
+
+          // Get ICP Ledger principal
+          let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+
+          // Check escrow balance
+          let totalCost = brief.bountyPerArticle;
+          if (brief.escrowBalance >= totalCost) {
+            // Record the approval and deduct from escrow tracking FIRST
+            switch (briefManager.recordApproval(article.briefId, totalCost)) {
+              case (#err(msg)) {
+                Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - recordApproval failed: " # msg);
+              };
+              case (#ok()) {
+                // Transfer ICP bounty to agent from brief's escrow using ICRC-1
+                let ledger = actor (Principal.toText(ledgerPrincipal)) : actor {
+                  icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
+                };
+
+                let fee = 10_000;
+                if (brief.bountyPerArticle > fee) {
+                  let paymentAmount = brief.bountyPerArticle - fee;
+
+                  let transferArgs : IcpLedger.TransferArg = {
+                    from_subaccount = ?brief.escrowSubaccount;
+                    to = { owner = article.agent; subaccount = null };
+                    amount = paymentAmount;
+                    fee = ?fee;
+                    memo = null;
+                    created_at_time = null;
+                  };
+
+                  try {
+                    let transferResult = await ledger.icrc1_transfer(transferArgs);
+
+                    switch (transferResult) {
+                      case (#Ok(_blockHeight)) {
+                        // Payment successful, approve the article
+                        ignore articleManager.approveArticle(article.articleId, reviewer, paymentAmount);
+                        Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " auto-approved and paid!");
+                      };
+                      case (#Err(error)) {
+                        // Transfer failed - refund the escrow tracking
+                        ignore briefManager.addToEscrow(article.briefId, totalCost);
+                        Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - Transfer failed: " # debug_show (error));
+                      };
+                    };
+                  } catch (e) {
+                    // Exception during transfer - refund the escrow tracking
+                    ignore briefManager.addToEscrow(article.briefId, totalCost);
+                    Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - Exception: " # Error.message(e));
+                  };
+                } else {
+                  Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - Bounty too small for fee");
+                  ignore briefManager.addToEscrow(article.briefId, totalCost); // Refund escrow
+                };
+              };
+            };
+          } else {
+            Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - Insufficient escrow, skipping");
+          };
         };
-        case (#err(msg)) {
-          Debug.print("[Janitor] Failed to renew brief " # briefId # ": " # msg);
+        case null {
+          Debug.print("[AutoApprove] Article " # Nat.toText(article.articleId) # " - Brief not found");
         };
       };
     };
 
-    renewedCount;
+    #awaited(actionId);
+  };
+
+  /// Async handler to renew expired recurring briefs
+  /// Pulls new escrow from curator's ICRC-2 allowance for each renewal cycle
+  func handleRenewRecurringBriefs(actionId : TT.ActionId, _action : TT.Action) : async* Star.Star<TT.ActionId, TT.Error> {
+    let now = Time.now();
+    let expiredBriefIds = briefManager.getExpiredRecurringBriefs(now);
+
+    Debug.print("[RenewBriefs] Found " # Nat.toText(expiredBriefIds.size()) # " recurring briefs to renew");
+
+    let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+    let fee : Nat = 10_000; // 0.0001 ICP transfer fee
+
+    for (briefId in expiredBriefIds.vals()) {
+      Debug.print("[RenewBriefs] Processing brief " # briefId);
+
+      switch (briefManager.getBrief(briefId)) {
+        case (?brief) {
+          let requiredEscrow = brief.bountyPerArticle * brief.maxArticles;
+
+          // Try to pull new escrow from curator's allowance
+          let ledger : actor {
+            icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
+          } = actor (Principal.toText(ledgerPrincipal));
+
+          try {
+            let transferResult = await ledger.icrc2_transfer_from({
+              from = { owner = brief.curator; subaccount = null };
+              to = {
+                owner = thisPrincipal;
+                subaccount = ?brief.escrowSubaccount;
+              };
+              amount = requiredEscrow;
+              fee = null;
+              memo = null;
+              created_at_time = null;
+              spender_subaccount = null;
+            });
+
+            switch (transferResult) {
+              case (#Ok(_blockIndex)) {
+                // Transfer successful - now renew the brief with fresh escrow
+                ignore briefManager.updateEscrowBalance(briefId, requiredEscrow);
+                switch (briefManager.renewRecurringBrief(briefId)) {
+                  case (#ok()) {
+                    Debug.print("[RenewBriefs] Successfully renewed brief " # briefId # " with " # Nat.toText(requiredEscrow) # " e8s escrow");
+                  };
+                  case (#err(msg)) {
+                    Debug.print("[RenewBriefs] Failed to renew brief " # briefId # ": " # msg);
+                  };
+                };
+              };
+              case (#Err(error)) {
+                let errorMsg = switch (error) {
+                  case (#InsufficientAllowance { allowance }) {
+                    "Insufficient allowance: " # Nat.toText(allowance) # " e8s, need " # Nat.toText(requiredEscrow + fee);
+                  };
+                  case (#InsufficientFunds { balance }) {
+                    "Insufficient funds: " # Nat.toText(balance) # " e8s";
+                  };
+                  case _ { "Transfer failed" };
+                };
+                Debug.print("[RenewBriefs] Cannot renew brief " # briefId # " - " # errorMsg # ". Closing brief.");
+                ignore briefManager.closeBrief(briefId);
+              };
+            };
+          } catch (e) {
+            Debug.print("[RenewBriefs] Exception renewing brief " # briefId # ": " # Error.message(e) # ". Closing brief.");
+            ignore briefManager.closeBrief(briefId);
+          };
+        };
+        case null {
+          Debug.print("[RenewBriefs] Brief " # briefId # " not found");
+        };
+      };
+    };
+
+    #awaited(actionId);
+  };
+
+  // Helper function to get list of expired non-recurring brief IDs (sync, just marks for closure)
+  func getExpiredNonRecurringBriefIds() : [Text] {
+    let now = Time.now();
+    briefManager.getExpiredNonRecurringBriefs(now);
+  };
+
+  /// Async handler to close expired non-recurring briefs and handle escrow
+  /// - No submissions: refund to curator (minus tx fee)
+  /// - Has submissions: send to treasury (curator forfeits for not approving)
+  func handleCloseExpiredBriefs(actionId : TT.ActionId, _action : TT.Action) : async* Star.Star<TT.ActionId, TT.Error> {
+    let expiredBriefIds = getExpiredNonRecurringBriefIds();
+
+    Debug.print("[CloseBriefs] Found " # Nat.toText(expiredBriefIds.size()) # " expired briefs to close");
+
+    let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+    let fee : Nat = 10_000; // 0.0001 ICP transfer fee
+
+    for (briefId in expiredBriefIds.vals()) {
+      switch (briefManager.getBrief(briefId)) {
+        case (?brief) {
+          let escrowBalance = brief.escrowBalance;
+
+          // Close the brief first
+          switch (briefManager.closeBrief(briefId)) {
+            case (#ok(_)) {
+              Debug.print("[CloseBriefs] Closed brief " # briefId);
+
+              // Handle escrow transfer if there's a balance
+              if (escrowBalance > fee) {
+                let transferAmount = escrowBalance - fee;
+
+                let ledger : actor {
+                  icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
+                } = actor (Principal.toText(ledgerPrincipal));
+
+                // Determine destination based on whether there were submissions
+                let (destination, destinationName) = if (brief.submittedCount == 0) {
+                  // No submissions - refund to curator
+                  ({ owner = brief.curator; subaccount = null }, "curator (refund)");
+                } else {
+                  // Had submissions but curator didn't approve any - send to treasury
+                  ({ owner = thisPrincipal; subaccount = null }, "treasury (forfeited)");
+                };
+
+                let transferArgs : IcpLedger.TransferArg = {
+                  from_subaccount = ?brief.escrowSubaccount;
+                  to = destination;
+                  amount = transferAmount;
+                  fee = ?fee;
+                  memo = null;
+                  created_at_time = null;
+                };
+
+                try {
+                  let transferResult = await ledger.icrc1_transfer(transferArgs);
+                  switch (transferResult) {
+                    case (#Ok(blockHeight)) {
+                      // Clear escrow balance after successful transfer
+                      ignore briefManager.updateEscrowBalance(briefId, 0);
+                      Debug.print("[CloseBriefs] Brief " # briefId # " - Transferred " # Nat.toText(transferAmount) # " e8s to " # destinationName # " (block " # Nat.toText(blockHeight) # ")");
+                    };
+                    case (#Err(error)) {
+                      Debug.print("[CloseBriefs] Brief " # briefId # " - Transfer failed: " # debug_show (error));
+                    };
+                  };
+                } catch (e) {
+                  Debug.print("[CloseBriefs] Brief " # briefId # " - Exception: " # Error.message(e));
+                };
+              } else {
+                Debug.print("[CloseBriefs] Brief " # briefId # " - Escrow balance too small for transfer: " # Nat.toText(escrowBalance));
+              };
+            };
+            case (#err(msg)) {
+              Debug.print("[CloseBriefs] Failed to close brief " # briefId # ": " # msg);
+            };
+          };
+        };
+        case null {
+          Debug.print("[CloseBriefs] Brief " # briefId # " not found");
+        };
+      };
+    };
+
+    #awaited(actionId);
   };
 
   // Resource contents stored in memory for simplicity.
@@ -357,6 +647,9 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
   // --- Register TimerTool Handlers ---
   tt().registerExecutionListenerSync(?"janitor_cleanup", handleJanitorCleanup);
+  tt().registerExecutionListenerAsync(?"auto_approve_articles", handleAutoApprove);
+  tt().registerExecutionListenerAsync(?"renew_recurring_briefs", handleRenewRecurringBriefs);
+  tt().registerExecutionListenerAsync(?"close_expired_briefs", handleCloseExpiredBriefs);
 
   // --- 1. DEFINE YOUR RESOURCES & TOOLS ---
   transient let resources : [McpTypes.Resource] = [
@@ -495,6 +788,92 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       amount,
       destination,
     );
+  };
+
+  /// Cleanup briefs with no expiration (legacy briefs created before default expiration was added)
+  /// This closes them and returns the list of affected brief IDs with their escrow balances for refund
+  /// Only the owner can call this.
+  public shared ({ caller }) func cleanup_briefs_no_expiration() : async Result.Result<[(Text, Nat)], Text> {
+    if (caller != owner) {
+      return #err("Only the owner can run cleanup");
+    };
+    let affected = briefManager.cleanupBriefsWithNoExpiration();
+    return #ok(affected);
+  };
+
+  /// Process escrow for closed briefs (migration for legacy briefs closed before escrow handling was added)
+  /// - No submissions: refund to curator (minus tx fee)
+  /// - Had submissions: send to treasury (curator forfeits for not approving)
+  /// Only the owner can call this.
+  public shared ({ caller }) func process_closed_briefs_escrow() : async Result.Result<Text, Text> {
+    if (caller != owner) {
+      return #err("Only the owner can run this migration");
+    };
+
+    let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+    let fee : Nat = 10_000;
+
+    var processedCount = 0;
+    var refundedCount = 0;
+    var forfeitedCount = 0;
+    var refundedAmount : Nat = 0;
+    var forfeitedAmount : Nat = 0;
+
+    // Get all closed briefs with remaining escrow
+    let closedBriefs = briefManager.getClosedBriefsWithEscrow();
+
+    let ledger : actor {
+      icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
+    } = actor (Principal.toText(ledgerPrincipal));
+
+    for (brief in closedBriefs.vals()) {
+      if (brief.escrowBalance > fee) {
+        let transferAmount = brief.escrowBalance - fee;
+        let hadSubmissions = brief.submittedCount > 0;
+
+        let destination = if (hadSubmissions) {
+          { owner = thisPrincipal; subaccount = null } // Treasury
+        } else {
+          { owner = brief.curator; subaccount = null } // Refund
+        };
+
+        let transferArgs : IcpLedger.TransferArg = {
+          from_subaccount = ?brief.escrowSubaccount;
+          to = destination;
+          amount = transferAmount;
+          fee = ?fee;
+          memo = null;
+          created_at_time = null;
+        };
+
+        try {
+          let transferResult = await ledger.icrc1_transfer(transferArgs);
+          switch (transferResult) {
+            case (#Ok(_)) {
+              ignore briefManager.updateEscrowBalance(brief.briefId, 0);
+              processedCount += 1;
+              if (hadSubmissions) {
+                forfeitedCount += 1;
+                forfeitedAmount += transferAmount;
+              } else {
+                refundedCount += 1;
+                refundedAmount += transferAmount;
+              };
+            };
+            case (#Err(error)) {
+              Debug.print("[Migration] Brief " # brief.briefId # " transfer failed: " # debug_show (error));
+            };
+          };
+        } catch (e) {
+          Debug.print("[Migration] Brief " # brief.briefId # " exception: " # Error.message(e));
+        };
+      };
+    };
+
+    let refundedIcp = Float.toText(Float.fromInt(refundedAmount) / 100_000_000.0);
+    let forfeitedIcp = Float.toText(Float.fromInt(forfeitedAmount) / 100_000_000.0);
+
+    #ok("Processed " # Nat.toText(processedCount) # " closed briefs. Refunded " # Nat.toText(refundedCount) # " (" # refundedIcp # " ICP) to curators. Forfeited " # Nat.toText(forfeitedCount) # " (" # forfeitedIcp # " ICP) to treasury.");
   };
 
   // Helper to create the HTTP context for each request.
@@ -673,7 +1052,120 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
     Debug.print("[Janitor] Manual cleanup triggered");
     let purgedCount = articleManager.purgeExpiredArticles();
-    "Purged " # Nat.toText(purgedCount) # " expired articles from triage.";
+
+    // Close expired non-recurring briefs with escrow handling
+    let expiredBriefIds = getExpiredNonRecurringBriefIds();
+    var closedCount = 0;
+    var refundedCount = 0;
+    var forfeitedCount = 0;
+
+    let ledgerPrincipal = Option.get(icpLedger, Principal.fromText("ryjl3-tyaaa-aaaaa-aaaba-cai"));
+    let fee : Nat = 10_000;
+
+    for (briefId in expiredBriefIds.vals()) {
+      switch (briefManager.getBrief(briefId)) {
+        case (?brief) {
+          let escrowBalance = brief.escrowBalance;
+          let hadSubmissions = brief.submittedCount > 0;
+
+          switch (briefManager.closeBrief(briefId)) {
+            case (#ok(_)) {
+              closedCount += 1;
+
+              if (escrowBalance > fee) {
+                let transferAmount = escrowBalance - fee;
+                let ledger : actor {
+                  icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
+                } = actor (Principal.toText(ledgerPrincipal));
+
+                let destination = if (hadSubmissions) {
+                  { owner = thisPrincipal; subaccount = null } // Treasury
+                } else {
+                  { owner = brief.curator; subaccount = null } // Refund
+                };
+
+                let transferArgs : IcpLedger.TransferArg = {
+                  from_subaccount = ?brief.escrowSubaccount;
+                  to = destination;
+                  amount = transferAmount;
+                  fee = ?fee;
+                  memo = null;
+                  created_at_time = null;
+                };
+
+                try {
+                  let transferResult = await ledger.icrc1_transfer(transferArgs);
+                  switch (transferResult) {
+                    case (#Ok(_)) {
+                      ignore briefManager.updateEscrowBalance(briefId, 0);
+                      if (hadSubmissions) { forfeitedCount += 1 } else {
+                        refundedCount += 1;
+                      };
+                    };
+                    case (#Err(_)) {};
+                  };
+                } catch (_) {};
+              };
+            };
+            case (#err(_)) {};
+          };
+        };
+        case null {};
+      };
+    };
+
+    // Get recurring briefs that need renewal and process them
+    let now = Time.now();
+    let recurringBriefIds = briefManager.getExpiredRecurringBriefs(now);
+    var renewedCount = 0;
+    var failedCount = 0;
+
+    for (briefId in recurringBriefIds.vals()) {
+      switch (briefManager.getBrief(briefId)) {
+        case (?brief) {
+          let requiredEscrow = brief.bountyPerArticle * brief.maxArticles;
+
+          let ledger : actor {
+            icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
+          } = actor (Principal.toText(ledgerPrincipal));
+
+          try {
+            let transferResult = await ledger.icrc2_transfer_from({
+              from = { owner = brief.curator; subaccount = null };
+              to = {
+                owner = thisPrincipal;
+                subaccount = ?brief.escrowSubaccount;
+              };
+              amount = requiredEscrow;
+              fee = null;
+              memo = null;
+              created_at_time = null;
+              spender_subaccount = null;
+            });
+
+            switch (transferResult) {
+              case (#Ok(_)) {
+                ignore briefManager.updateEscrowBalance(briefId, requiredEscrow);
+                switch (briefManager.renewRecurringBrief(briefId)) {
+                  case (#ok()) { renewedCount += 1 };
+                  case (#err(_)) { failedCount += 1 };
+                };
+              };
+              case (#Err(_)) {
+                ignore briefManager.closeBrief(briefId);
+                failedCount += 1;
+              };
+            };
+          } catch (_) {
+            ignore briefManager.closeBrief(briefId);
+            failedCount += 1;
+          };
+        };
+        case null {};
+      };
+    };
+
+    "Purged " # Nat.toText(purgedCount) # " expired articles. Closed " # Nat.toText(closedCount) # " expired briefs (" # Nat.toText(refundedCount) # " refunded, " # Nat.toText(forfeitedCount) # " forfeited to treasury). Renewed " # Nat.toText(renewedCount) # " recurring briefs (failed: " # Nat.toText(failedCount) # ").";
   };
 
   // --- Web Query Endpoints for Frontend ---
@@ -701,8 +1193,28 @@ shared ({ caller = deployer }) persistent actor class McpServer(
     briefManager.getBrief(briefId);
   };
 
+  /// Get multiple briefs by IDs (for bulk lookups)
+  public query func web_get_briefs_by_ids(briefIds : [Text]) : async [PressTypes.Brief] {
+    let result = Buffer.Buffer<PressTypes.Brief>(briefIds.size());
+    for (briefId in briefIds.vals()) {
+      switch (briefManager.getBrief(briefId)) {
+        case (?brief) { result.add(brief) };
+        case null {};
+      };
+    };
+    Buffer.toArray(result);
+  };
+
+  /// Get all briefs created by the caller (curator view)
+  public shared query ({ caller }) func web_get_my_briefs() : async [PressTypes.Brief] {
+    briefManager.getBriefsByCurator(caller);
+  };
+
   /// Get all articles in triage for the curator's briefs
   public shared query ({ caller }) func web_get_triage_articles() : async [PressTypes.Article] {
+    let now = Time.now();
+    let fortyEightHours : Int = 48 * 60 * 60 * 1_000_000_000; // 48 hours in nanoseconds
+
     // Get all briefs owned by the caller
     let curatorBriefIds = Buffer.Buffer<Text>(0);
     for ((briefId, brief) in Map.entries(stable_briefs)) {
@@ -713,16 +1225,22 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
     // Filter triage articles to only include those for the curator's briefs
     // AND exclude #draft articles (only show #pending or later)
+    // AND exclude expired articles (older than 48h)
     let filteredArticles = Buffer.Buffer<PressTypes.Article>(0);
     for (article in articleManager.getTriageArticles().vals()) {
-      // Skip draft articles - they should only be visible to the author
-      switch (article.status) {
-        case (#draft) { /* skip */ };
-        case (_) {
-          // Check if this article's brief belongs to the caller
-          for (briefId in curatorBriefIds.vals()) {
-            if (article.briefId == briefId) {
-              filteredArticles.add(article);
+      // Skip expired articles (older than 48 hours since submission)
+      if (now - article.submittedAt > fortyEightHours) {
+        // skip expired
+      } else {
+        // Skip draft articles - they should only be visible to the author
+        switch (article.status) {
+          case (#draft) { /* skip */ };
+          case (_) {
+            // Check if this article's brief belongs to the caller
+            for (briefId in curatorBriefIds.vals()) {
+              if (article.briefId == briefId) {
+                filteredArticles.add(article);
+              };
             };
           };
         };
@@ -733,8 +1251,34 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   };
 
   /// Get a specific article by ID
-  public query func web_get_article(articleId : Nat) : async ?PressTypes.Article {
-    articleManager.getArticle(articleId);
+  /// Only returns the article if:
+  /// - The caller is the author, OR
+  /// - The caller is the curator of the brief AND article is not a draft
+  public shared query ({ caller }) func web_get_article(articleId : Nat) : async ?PressTypes.Article {
+    switch (articleManager.getArticle(articleId)) {
+      case (null) { null };
+      case (?article) {
+        // Allow author to view their own articles
+        if (article.agent == caller) {
+          return ?article;
+        };
+        // Draft articles are ONLY visible to the author
+        if (article.status == #draft) {
+          return null;
+        };
+        // Allow curator to view non-draft articles submitted to their briefs
+        switch (Map.get(stable_briefs, Map.thash, article.briefId)) {
+          case (?brief) {
+            if (brief.curator == caller) {
+              return ?article;
+            };
+          };
+          case null {};
+        };
+        // Otherwise, don't reveal the article
+        null;
+      };
+    };
   };
 
   /// Get agent statistics
@@ -743,18 +1287,45 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   };
 
   /// Get all articles by a specific agent
-  public query func web_get_articles_by_agent(agent : Principal) : async [PressTypes.Article] {
+  /// Only the agent themselves can view their own articles
+  public shared query ({ caller }) func web_get_articles_by_agent(agent : Principal) : async [PressTypes.Article] {
+    // Only allow agents to view their own articles
+    if (caller != agent) {
+      return [];
+    };
     articleManager.getArticlesByAgent(agent);
   };
 
   /// Get all articles submitted to a specific brief
-  public query func web_get_articles_by_brief(briefId : Text) : async [PressTypes.Article] {
+  /// Only the curator of the brief can view submitted articles
+  public shared query ({ caller }) func web_get_articles_by_brief(briefId : Text) : async [PressTypes.Article] {
+    // Check if caller is the curator of this brief
+    switch (Map.get(stable_briefs, Map.thash, briefId)) {
+      case (?brief) {
+        if (brief.curator != caller) {
+          return [];
+        };
+      };
+      case null {
+        return [];
+      };
+    };
     articleManager.getArticlesByBrief(briefId);
   };
 
   /// Get curator statistics
   public query func web_get_curator_stats(curator : Principal) : async ?PressTypes.CuratorStats {
     briefManager.getCuratorStats(curator);
+  };
+
+  /// Get top curators by total bounties paid
+  public query func web_get_top_curators(limit : Nat) : async [PressTypes.CuratorStats] {
+    briefManager.getTopCurators(limit);
+  };
+
+  /// Get top authors by total earnings
+  public query func web_get_top_authors(limit : Nat) : async [PressTypes.AgentStats] {
+    articleManager.getTopAgents(limit);
   };
 
   /// Get a media asset by ID
@@ -1036,18 +1607,70 @@ shared ({ caller = deployer }) persistent actor class McpServer(
   };
 
   /// Agent approves their draft article to send to curator queue
+  /// Charges 0.01 ICP submission fee via ICRC-1 transfer
   public shared ({ caller }) func web_approve_draft(
     articleId : Nat
   ) : async Result.Result<(), Text> {
-    switch (articleManager.approveDraftToPending(articleId, caller)) {
-      case (#ok(briefId)) {
-        // Now increment the submitted count since article is moving from draft to pending
-        ignore briefManager.incrementSubmittedCount(briefId);
-        #ok();
+    let SUBMISSION_FEE : Nat = 1_000_000; // 0.01 ICP in e8s
+    let TRANSFER_FEE : Nat = 10_000; // ICP ledger fee
+
+    // Get ICP Ledger canister ID
+    let ledgerCanisterId = switch (icpLedger) {
+      case (?id) { id };
+      case (null) {
+        return #err("ICP Ledger not configured");
       };
-      case (#err(e)) {
-        #err(e);
+    };
+
+    // Create actor reference to ICP Ledger
+    let ledger = actor (Principal.toText(ledgerCanisterId)) : actor {
+      icrc1_transfer : shared IcpLedger.TransferArg -> async IcpLedger.Result;
+    };
+
+    // Transfer submission fee from caller to canister treasury
+    try {
+      let transferResult = await ledger.icrc1_transfer({
+        to = { owner = thisPrincipal; subaccount = null };
+        amount = SUBMISSION_FEE;
+        fee = ?TRANSFER_FEE;
+        memo = null;
+        from_subaccount = null;
+        created_at_time = null;
+      });
+
+      switch (transferResult) {
+        case (#Err(error)) {
+          let errorMsg = switch (error) {
+            case (#InsufficientFunds { balance }) {
+              "Insufficient ICP balance: " # Nat.toText(balance) # " e8s. Need " # Nat.toText(SUBMISSION_FEE + TRANSFER_FEE) # " e8s (0.01 ICP + fee)";
+            };
+            case (#BadFee { expected_fee }) {
+              "Incorrect fee. Expected: " # Nat.toText(expected_fee) # " e8s";
+            };
+            case _ {
+              "Transfer failed. Please ensure you have at least 0.0101 ICP in your wallet";
+            };
+          };
+          return #err(errorMsg);
+        };
+        case (#Ok(_blockIndex)) {
+          // Transfer successful, now approve the draft
+          switch (articleManager.approveDraftToPending(articleId, caller)) {
+            case (#ok(briefId)) {
+              // Increment the submitted count since article is moving from draft to pending
+              ignore briefManager.incrementSubmittedCount(briefId);
+              #ok();
+            };
+            case (#err(e)) {
+              // Note: Fee was already charged but approval failed
+              // This is acceptable as it prevents spam attempts
+              #err(e);
+            };
+          };
+        };
       };
+    } catch (e) {
+      return #err("Failed to transfer submission fee: " # Error.message(e));
     };
   };
 
@@ -1085,6 +1708,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
     // Calculate total escrow amount needed
     let totalEscrow = bountyPerArticle * maxArticles;
+    let fee : Nat = 10_000; // ICP ledger fee
 
     // Get ICP Ledger canister ID
     let ledgerCanisterId = switch (icpLedger) {
@@ -1094,12 +1718,25 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       };
     };
 
-    // Create actor reference to ICP Ledger for ICRC-2 transfer_from
+    // Create actor reference to ICP Ledger for ICRC-2 operations
     let ledger = actor (Principal.toText(ledgerCanisterId)) : actor {
+      icrc2_allowance : shared query IcpLedger.AllowanceArgs -> async IcpLedger.Allowance_1;
       icrc2_transfer_from : shared IcpLedger.TransferFromArgs -> async IcpLedger.Result_3;
     };
 
-    // First create the brief to get the subaccount (with 0 balance temporarily)
+    // CHECK ALLOWANCE FIRST before creating the brief
+    // This prevents the race condition where agents see a brief that immediately closes
+    let allowanceResult = await ledger.icrc2_allowance({
+      account = { owner = caller; subaccount = null };
+      spender = { owner = thisPrincipal; subaccount = null };
+    });
+
+    let requiredAmount = totalEscrow + fee;
+    if (allowanceResult.allowance < requiredAmount) {
+      return #err("Insufficient ICRC-2 allowance. Current allowance: " # Nat.toText(allowanceResult.allowance) # " e8s. Please approve at least " # Nat.toText(requiredAmount) # " e8s (including fee) before creating the brief");
+    };
+
+    // Now create the brief since we've verified allowance exists
     let briefResult = briefManager.createBrief(
       caller,
       title,
@@ -1120,7 +1757,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
       case (#err(msg)) { return #err(msg) };
     };
 
-    // Now transfer funds from curator to escrow subaccount using ICRC-2 transfer_from
+    // Transfer funds from curator to escrow subaccount using ICRC-2 transfer_from
     try {
       let transferResult = await ledger.icrc2_transfer_from({
         from = { owner = caller; subaccount = null };
@@ -1139,7 +1776,7 @@ shared ({ caller = deployer }) persistent actor class McpServer(
 
           let errorMsg = switch (error) {
             case (#InsufficientAllowance { allowance }) {
-              "Insufficient ICRC-2 allowance. Please approve " # Nat.toText(totalEscrow + 10_000) # " e8s (including fee) before creating the brief";
+              "Insufficient ICRC-2 allowance. Please approve " # Nat.toText(totalEscrow + fee) # " e8s (including fee) before creating the brief";
             };
             case (#InsufficientFunds { balance }) {
               "Insufficient ICP balance: " # Nat.toText(balance) # " e8s. Need " # Nat.toText(totalEscrow) # " e8s";

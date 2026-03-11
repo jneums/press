@@ -80,57 +80,57 @@
 }
 
 .dark {
-  /* Pure black background */
-  --background: oklch(0.05 0 0);
-  --foreground: oklch(0.98 0 0);
+  /* Rich black background - #181A20 */
+  --background: #181A20;
+  --foreground: #F4F6FC;
   
-  /* Card with slight elevation */
-  --card: oklch(0.10 0 0);
-  --card-foreground: oklch(0.98 0 0);
+  /* Card with slightly lighter dark gray - #1F1F24 */
+  --card: #1F1F24;
+  --card-foreground: #F4F6FC;
   
-  --popover: oklch(0.10 0 0);
-  --popover-foreground: oklch(0.98 0 0);
+  --popover: #1F1F24;
+  --popover-foreground: #F4F6FC;
   
   /* Strong Red primary - #C50022 */
-  --primary: oklch(0.46 0.22 15);
-  --primary-foreground: oklch(0.98 0 0);
+  --primary: #C50022;
+  --primary-foreground: #FFFFFF;
   
-  /* Dark secondary */
-  --secondary: oklch(0.15 0 0);
-  --secondary-foreground: oklch(0.98 0 0);
+  /* Silver/gray secondary accent */
+  --secondary: #23242A;
+  --secondary-foreground: #F4F6FC;
   
   /* Muted backgrounds */
-  --muted: oklch(0.13 0 0);
-  --muted-foreground: oklch(0.60 0 0);
+  --muted: #23242A;
+  --muted-foreground: #9CA3AF;
   
-  /* Accent red */
-  --accent: oklch(0.20 0.05 15);
-  --accent-foreground: oklch(0.98 0 0);
+  /* Red accent for highlights */
+  --accent: #2A1015;
+  --accent-foreground: #FFFFFF;
   
   /* Strong red for destructive actions */
-  --destructive: oklch(0.46 0.22 15);
+  --destructive: #C50022;
   
-  /* Subtle borders */
-  --border: oklch(0.20 0 0);
-  --input: oklch(0.20 0 0);
-  --ring: oklch(0.46 0.22 15);
+  /* Subtle borders with silver tint */
+  --border: #3A3A4A;
+  --input: #3A3A4A;
+  --ring: #C50022;
   
   /* Chart colors - red variations */
-  --chart-1: oklch(0.46 0.22 15);
-  --chart-2: oklch(0.40 0.20 15);
-  --chart-3: oklch(0.35 0.18 15);
-  --chart-4: oklch(0.50 0.24 15);
-  --chart-5: oklch(0.43 0.21 15);
+  --chart-1: #C50022;
+  --chart-2: #A3001B;
+  --chart-3: #820016;
+  --chart-4: #E60028;
+  --chart-5: #D40024;
   
   /* Sidebar */
-  --sidebar: oklch(0.10 0 0);
-  --sidebar-foreground: oklch(0.98 0 0);
-  --sidebar-primary: oklch(0.46 0.22 15);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.15 0 0);
-  --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.20 0 0);
-  --sidebar-ring: oklch(0.46 0.22 15);
+  --sidebar: #181A20;
+  --sidebar-foreground: #F4F6FC;
+  --sidebar-primary: #C50022;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #23242A;
+  --sidebar-accent-foreground: #F4F6FC;
+  --sidebar-border: #3A3A4A;
+  --sidebar-ring: #C50022;
   
   --radius: 0.5rem;
 }
@@ -156,14 +156,14 @@
   }
   .dark body {
     background-image: 
-      /* Corner glows */
-      radial-gradient(ellipse 800px 800px at 0% 0%, oklch(0.46 0.22 15 / 0.08), transparent 50%),
-      radial-gradient(ellipse 800px 800px at 100% 0%, oklch(0.46 0.22 15 / 0.05), transparent 50%),
-      radial-gradient(ellipse 600px 600px at 100% 100%, oklch(0.46 0.22 15 / 0.06), transparent 50%),
-      /* Tech grid pattern */
-      repeating-linear-gradient(0deg, oklch(0.20 0 0 / 0.03) 0px, transparent 1px, transparent 40px, oklch(0.20 0 0 / 0.03) 41px),
-      repeating-linear-gradient(90deg, oklch(0.20 0 0 / 0.03) 0px, transparent 1px, transparent 40px, oklch(0.20 0 0 / 0.03) 41px);
-    background-color: var(--background);
+      /* Corner glows with deeper red */
+      radial-gradient(ellipse 800px 800px at 0% 0%, rgba(197, 0, 34, 0.12), transparent 50%),
+      radial-gradient(ellipse 800px 800px at 100% 0%, rgba(197, 0, 34, 0.08), transparent 50%),
+      radial-gradient(ellipse 600px 600px at 100% 100%, rgba(197, 0, 34, 0.08), transparent 50%),
+      /* Tech grid pattern - very subtle */
+      repeating-linear-gradient(0deg, rgba(58, 58, 74, 0.06) 0px, transparent 1px, transparent 80px, rgba(58, 58, 74, 0.06) 81px),
+      repeating-linear-gradient(90deg, rgba(58, 58, 74, 0.06) 0px, transparent 1px, transparent 80px, rgba(58, 58, 74, 0.06) 81px);
+    background-color: #181A20;
   }
   button, a, [role="button"] {
     cursor: pointer;

@@ -344,15 +344,44 @@ module {
       };
     };
 
-    /// Janitor: purge expired articles from triage (>48h old)
+    /// Get articles eligible for auto-approval
+    /// Returns articles that have used all 3 revisions AND 48h have passed since last revision submission
+    /// This protects authors from malicious curators who never finalize after max revisions
+    public func getArticlesForAutoApproval(now : Int) : [Article] {
+      let fortyEightHours : Int = 48 * 60 * 60 * 1_000_000_000; // 48 hours in nanoseconds
+      let buffer = Buffer.Buffer<Article>(0);
+
+      for ((_, article) in Map.entries(articlesTriage)) {
+        // Must have used all 3 revisions
+        if (article.revisionsRequested >= 3 and article.status == #revisionSubmitted) {
+          // Check if 48 hours have passed since last revision submission
+          if (article.revisionSubmissions.size() > 0) {
+            let lastSubmission = article.revisionSubmissions[article.revisionSubmissions.size() - 1];
+            if (now - lastSubmission.submittedAt > fortyEightHours) {
+              buffer.add(article);
+            };
+          };
+        };
+      };
+
+      Buffer.toArray(buffer);
+    };
+
+    /// Janitor: purge expired articles from triage
+    /// - Drafts (not yet approved by agent): expire after 72h
+    /// - Pending/Revision articles (waiting for curator): expire after 48h
     public func purgeExpiredArticles() : Nat {
       let now = Time.now();
       let fortyEightHours : Int = 48 * 60 * 60 * 1_000_000_000; // 48 hours in nanoseconds
+      let seventyTwoHours : Int = 72 * 60 * 60 * 1_000_000_000; // 72 hours in nanoseconds
       let buffer = Buffer.Buffer<Nat>(0);
 
-      // Find expired articles
+      // Find expired articles (different TTL for drafts vs pending)
       for ((id, article) in Map.entries(articlesTriage)) {
-        if (now - article.submittedAt > fortyEightHours) {
+        let ttl = if (article.status == #draft) { seventyTwoHours } else {
+          fortyEightHours;
+        };
+        if (now - article.submittedAt > ttl) {
           buffer.add(id);
         };
       };
@@ -387,6 +416,29 @@ module {
       buffer.size();
     };
 
+    /// Check if an article is nearing expiry (for reminders)
+    /// Returns: (hoursRemaining, shouldShowReminder)
+    /// - Drafts: 72h TTL, reminder at 48h (24h remaining)
+    /// - Pending: 48h TTL, reminder at 24h (24h remaining)
+    public func getArticleExpiryInfo(articleId : Nat) : ?(Int, Bool) {
+      switch (Map.get(articlesTriage, nhash, articleId)) {
+        case (?article) {
+          let now = Time.now();
+          let oneHour : Int = 60 * 60 * 1_000_000_000;
+          let ttlHours = if (article.status == #draft) { 72 } else { 48 };
+          let reminderAtHours = if (article.status == #draft) { 48 } else { 24 }; // Remind when this many hours have passed
+
+          let elapsedNanos = now - article.submittedAt;
+          let elapsedHours = elapsedNanos / oneHour;
+          let remainingHours = ttlHours - elapsedHours;
+          let shouldRemind = elapsedHours >= reminderAtHours;
+
+          ?(remainingHours, shouldRemind);
+        };
+        case null { null };
+      };
+    };
+
     /// Get all articles in triage
     public func getTriageArticles() : [Article] {
       let buffer = Buffer.Buffer<Article>(0);
@@ -407,6 +459,31 @@ module {
     /// Get agent stats
     public func getAgentStats(agent : Principal) : ?AgentStats {
       Map.get(agentStats, phash, agent);
+    };
+
+    /// Get top agents by total earnings
+    public func getTopAgents(limit : Nat) : [AgentStats] {
+      let buffer = Buffer.Buffer<AgentStats>(0);
+      for ((_, stats) in Map.entries(agentStats)) {
+        buffer.add(stats);
+      };
+
+      // Sort by totalEarned descending
+      let allStats = Buffer.toArray(buffer);
+      let sorted = Array.sort<AgentStats>(
+        allStats,
+        func(a, b) {
+          if (a.totalEarned > b.totalEarned) { #less } else if (a.totalEarned < b.totalEarned) {
+            #greater;
+          } else { #equal };
+        },
+      );
+
+      // Return top N
+      let actualLimit = if (sorted.size() < limit) { sorted.size() } else {
+        limit;
+      };
+      Array.tabulate<AgentStats>(actualLimit, func(i) { sorted[i] });
     };
 
     /// Get next article ID (for external reference)

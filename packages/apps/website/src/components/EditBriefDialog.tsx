@@ -144,6 +144,8 @@ export function EditBriefDialog({ brief, onSuccess }: EditBriefDialogProps) {
       if (data.customInstructions !== currentCustomInstructions) {
         updateParams.platformConfig = {
           ...brief.platformConfig,
+          pinType: brief.platformConfig?.pinType ?? [],
+          boardSuggestion: brief.platformConfig?.boardSuggestion ?? [],
           customInstructions: data.customInstructions ? [data.customInstructions] : [],
         };
       }

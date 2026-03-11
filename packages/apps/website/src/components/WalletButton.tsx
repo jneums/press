@@ -67,7 +67,10 @@ export default function WalletButton() {
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button 
+          size="sm" 
+          className="gap-2 bg-[#C50022] hover:bg-[#A3001B] text-white shadow-lg shadow-[#C50022]/20 transition-all hover:shadow-xl hover:shadow-[#C50022]/30"
+        >
           <Wallet className="h-4 w-4" />
           Connect Wallet
         </Button>
